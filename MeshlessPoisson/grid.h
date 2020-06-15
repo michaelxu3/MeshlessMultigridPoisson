@@ -16,6 +16,7 @@ public:
 	void build_laplacian();
 	void sor(int numIts, Eigen::VectorXd source);
 	vector <int> kNearestNeighbors(int pointNumber);
+	Eigen::VectorXd* getValues();
 private:
 	vector<std::tuple<double, double, double>> points_;
 	vector<std::tuple<vector<int>, int, vector<double>>> boundaries_;
@@ -26,7 +27,7 @@ private:
 	vector<int> bcFlags_;
 	double omega_;
 	Eigen::VectorXd* values_;
-	Eigen::SparseMatrix<double>* laplaceMat_;
+	Eigen::MatrixXd* laplaceMat_;
 
 	std::pair<Eigen::MatrixXd, vector<int>> buildCoeffMatrix(int pointNum);
 	std::pair<Eigen::VectorXd, vector<int>> laplaceWeights(int pointID);

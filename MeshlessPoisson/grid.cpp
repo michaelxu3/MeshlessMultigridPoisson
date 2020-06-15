@@ -12,7 +12,8 @@ Grid::Grid(vector<std::tuple<double, double, double>> points, vector<std::tuple<
 	int numPoint = (int)(points.size());
 	values_ = new Eigen::VectorXd(numPoint);
 	values_->setZero();
-	laplaceMat_ = new Eigen::SparseMatrix<double>(numPoint, numPoint);
+	laplaceMat_ = new Eigen::MatrixXd (numPoint, numPoint);
+	laplaceMat_->setZero();
 	stencilSize_ = stencilSize;
 	omega_ = omega;
 	bcFlags_ = std::vector<int>(numPoint);
@@ -57,10 +58,11 @@ void Grid::build_laplacian() {
 	for (int i = 0; i < laplaceMatSize_; i++) {
 		std::pair <Eigen::VectorXd, vector<int>> weights = laplaceWeights(i);
 		for (size_t j = 0; j < weights.second.size(); j++) {
-			tripletList.push_back(Eigen::Triplet<double>(i, weights.second[j], weights.first(j)));
+			//tripletList.push_back(Eigen::Triplet<double>(i, weights.second[j], weights.first(j)));
+			(*laplaceMat_)(i, weights.second[j]) = weights.first(j);
 		}
 	}
-	laplaceMat_->setFromTriplets(tripletList.begin(), tripletList.end());
+	//laplaceMat_->setFromTriplets(tripletList.begin(), tripletList.end());
 	/*
 	for (int i = 0; i < laplaceMatSize_; i++) {
 		std::cout << laplaceMat_->coeff(i, i) << std::endl;
@@ -69,28 +71,33 @@ void Grid::build_laplacian() {
 }
 
 void Grid::sor(int numIts, Eigen::VectorXd source) {
+	boundaryOp();
+	double residual;
+	double x_i;
 	for (int it = 0; it < numIts; it++) {		// set/enforce the boundary conditions
-		boundaryOp();
-		double residual = 0;
-		//std::cout << laplaceMatSize_ << " " << values_->size() << std::endl;
+		residual = 0;
+		//std::cout << "Condition number: " << laplaceMat_->norm()*laplaceMat_->norm() << std::endl;
+		//td::cout <<  << std::endl;
 		for (int i = 0; i < laplaceMatSize_; i++) {
-			double x_i_old = (*values_)(i);
+			double x_i_old = values_->coeff(i);
 			if (bcFlags_[i] != 0) {
 				continue;
 			}
-			double x_i = 0;
-			x_i += (1 / laplaceMat_->coeff(i, i))*source(i);
+			x_i = 0;
+			double diagCoeff = laplaceMat_->coeff(i, i);
+			x_i += (1 - omega_)*values_->coeff(i) + omega_ / diagCoeff*source.coeff(i);
 			//std::cout << x_i << std::endl;
 			for (int j = 0; j < laplaceMatSize_; j++) {
 				if (i != j) {
-					x_i -= laplaceMat_->coeff(i, j)*(*values_)(j);
+					x_i -= omega_/diagCoeff*laplaceMat_->coeff(i, j)*values_->coeff(j);
 				}
 			}
-			(*values_)(i) = x_i;
+			values_->coeffRef(i) = x_i;
 			//std::cout << x_i << std::endl;
-			residual += std::abs(x_i - x_i_old);
+			residual += (x_i - x_i_old)*(x_i - x_i_old);
 		}
-		std::cout << "L1 residual: " << residual << std::endl;
+		residual = std::sqrt(residual / laplaceMatSize_);
+		std::cout << "L2 residual: " << residual << std::endl;
 	}
 }
 //Fix distance function if we want to extend code to 3D. Makes and sorts a distance array with int point IDs. Brute force, so O(n log n) time
@@ -143,6 +150,7 @@ std::pair<Eigen::MatrixXd, vector<int>> Grid::buildCoeffMatrix(int pointID) {
 			}
 		}
 	}
+	//std::cout << "Condition number: " << coeff_mat.norm()*coeff_mat.inverse().norm() << std::endl;
 	//Rest of the matrix should automatically be zeros.
 	return std::pair<Eigen::MatrixXd, vector<int>>(coeff_mat, neighbors);
 }
@@ -179,4 +187,7 @@ std::pair<Eigen::VectorXd, vector<int>> Grid::laplaceWeights (int pointID) {
 	}
 	Eigen::VectorXd weights = coeffs.first.partialPivLu().solve(rhs);
 	return std::pair<Eigen::VectorXd, vector<int>>(weights, neighbors);
+}
+Eigen::VectorXd* Grid::getValues() {
+	return values_;
 }
