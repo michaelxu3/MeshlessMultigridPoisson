@@ -13,7 +13,7 @@ public:
 	~Grid();
 	void setBCFlag(int boundary, std::string type, vector<double> boundValue);
 	void boundaryOp();
-	void build_laplacian(int k);
+	void build_laplacian();
 	void sor(int numIts, Eigen::VectorXd source);
 	vector <int> kNearestNeighbors(int pointNumber);
 private:
