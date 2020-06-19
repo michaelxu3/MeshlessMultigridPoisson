@@ -18,6 +18,16 @@
       <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="grid.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="multigrid.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="grid.h" />
+    <ClInclude Include="gridclasses.hpp" />
+    <ClInclude Include="multigrid.h" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>
     <ProjectGuid>{F99EED95-4C3C-4BBB-837C-E383EC111B0E}</ProjectGuid>
@@ -82,6 +92,7 @@
       <WholeProgramOptimization>false</WholeProgramOptimization>
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -122,16 +133,6 @@
       <OptimizeReferences>true</OptimizeReferences>
     </Link>
   </ItemDefinitionGroup>
-  <ItemGroup>
-    <ClInclude Include="grid.h" />
-    <ClInclude Include="Header.h" />
-    <ClInclude Include="multigrid.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="grid.cpp" />
-    <ClCompile Include="main.cpp" />
-    <ClCompile Include="multigrid.cpp" />
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

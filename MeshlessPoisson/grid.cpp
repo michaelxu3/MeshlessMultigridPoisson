@@ -3,20 +3,23 @@
 #include "math.h"
 #include <iostream>
 #include <algorithm>
-Grid::Grid(vector<std::tuple<double, double, double>> points, vector<std::tuple<vector<int>, int, vector<double>>> boundaries, int rbfExp, int polyDeg, int stencilSize, double omega) {
+Grid::Grid(vector<std::tuple<double, double, double>> points, vector<std::tuple<vector<int>, int, vector<double>>> boundaries,
+										int rbfExp, int polyDeg, int stencilSize, double omega, Eigen::VectorXd source, int sorIters) {
 	points_ = points;
 	boundaries_ = boundaries;
-	rbfExp_ = rbfExp;
-	polyDeg_ = polyDeg;
+	properties_.rbfExp = rbfExp;
+	properties_.polyDeg = polyDeg;
 	laplaceMatSize_ = (int)(points.size());
 	int numPoint = (int)(points.size());
 	values_ = new Eigen::VectorXd(numPoint);
 	values_->setZero();
-	laplaceMat_ = new Eigen::MatrixXd (numPoint, numPoint);
+	laplaceMat_ = new Eigen::SparseMatrix<double>(numPoint, numPoint);
 	laplaceMat_->setZero();
-	stencilSize_ = stencilSize;
-	omega_ = omega;
+	properties_.stencilSize = stencilSize;
+	properties_.omega = omega;
 	bcFlags_ = std::vector<int>(numPoint);
+	properties_.iters = sorIters;
+	source_ = source;
 }
 Grid::~Grid() {
 	delete values_;
@@ -58,26 +61,20 @@ void Grid::build_laplacian() {
 	for (int i = 0; i < laplaceMatSize_; i++) {
 		std::pair <Eigen::VectorXd, vector<int>> weights = laplaceWeights(i);
 		for (size_t j = 0; j < weights.second.size(); j++) {
-			//tripletList.push_back(Eigen::Triplet<double>(i, weights.second[j], weights.first(j)));
-			(*laplaceMat_)(i, weights.second[j]) = weights.first(j);
+			
+			tripletList.push_back(Eigen::Triplet<double>(i, weights.second[j], weights.first(j)));
 		}
 	}
-	//laplaceMat_->setFromTriplets(tripletList.begin(), tripletList.end());
-	/*
-	for (int i = 0; i < laplaceMatSize_; i++) {
-		std::cout << laplaceMat_->coeff(i, i) << std::endl;
-	}
-	*/
+	laplaceMat_->setFromTriplets(tripletList.begin(), tripletList.end());
 }
 
-void Grid::sor(int numIts, Eigen::VectorXd source) {
+void Grid::sor() {
 	boundaryOp();
+	
 	double residual;
 	double x_i;
-	for (int it = 0; it < numIts; it++) {		// set/enforce the boundary conditions
+	for (int it = 0; it < properties_.iters; it++) {		// set/enforce the boundary conditions
 		residual = 0;
-		//std::cout << "Condition number: " << laplaceMat_->norm()*laplaceMat_->norm() << std::endl;
-		//td::cout <<  << std::endl;
 		for (int i = 0; i < laplaceMatSize_; i++) {
 			double x_i_old = values_->coeff(i);
 			if (bcFlags_[i] != 0) {
@@ -85,25 +82,26 @@ void Grid::sor(int numIts, Eigen::VectorXd source) {
 			}
 			x_i = 0;
 			double diagCoeff = laplaceMat_->coeff(i, i);
-			x_i += (1 - omega_)*values_->coeff(i) + omega_ / diagCoeff*source.coeff(i);
-			//std::cout << x_i << std::endl;
+			x_i += (1 - properties_.omega)*values_->coeff(i) + properties_.omega / diagCoeff * source_.coeff(i);
 			for (int j = 0; j < laplaceMatSize_; j++) {
 				if (i != j) {
-					x_i -= omega_/diagCoeff*laplaceMat_->coeff(i, j)*values_->coeff(j);
+					x_i -= properties_.omega / diagCoeff * laplaceMat_->coeff(i, j)*values_->coeff(j);
 				}
 			}
 			values_->coeffRef(i) = x_i;
-			//std::cout << x_i << std::endl;
-			residual += (x_i - x_i_old)*(x_i - x_i_old);
+			residual += (x_i - x_i_old);
 		}
-		residual = std::sqrt(residual / laplaceMatSize_);
-		std::cout << "L2 residual: " << residual << std::endl;
+		residual = (residual / laplaceMatSize_);
+		std::cout << "residual: " << residual << std::endl;
 	}
 }
 //Fix distance function if we want to extend code to 3D. Makes and sorts a distance array with int point IDs. Brute force, so O(n log n) time
 vector<int> Grid::kNearestNeighbors(int pointID) {
+	return kNearestNeighbors(points_[pointID]);
+}
+
+vector<int> Grid::kNearestNeighbors(std::tuple<double, double, double> refPoint) {
 	vector<std::pair<double, int>> distances;
-	std::tuple<double, double, double> refPoint = points_[pointID];
 	for (size_t i = 0; i < points_.size(); i++) {
 		std::tuple<double, double, double> queryPoint = points_[i];
 		distances.push_back(std::pair<double, int>(distance(refPoint, queryPoint), i));
@@ -113,34 +111,29 @@ vector<int> Grid::kNearestNeighbors(int pointID) {
 
 	vector<int> nearestNeighbors;
 	//Have to include point itself in the stencil since otherwise diag would be zeros.
-	for (int i = 0; i < stencilSize_; i++) {
+	for (int i = 0; i < properties_.stencilSize; i++) {
 		nearestNeighbors.push_back(distances[i].second);
 	}
 	return nearestNeighbors;
 }
 //Builds PHS coefficients matrix for a point
 //returns pair with first = coeff matrix and second = list of neighbors, to save time.
-std::pair<Eigen::MatrixXd, vector<int>> Grid::buildCoeffMatrix(int pointID) {
-	int polyTerms = (polyDeg_ + 1)*(polyDeg_ + 2) / 2;
-	vector<int> neighbors = kNearestNeighbors(pointID);
+std::pair<Eigen::MatrixXd, vector<int>> Grid::buildCoeffMatrix(std::tuple<double, double, double> point) {
+	int polyTerms = (properties_.polyDeg + 1)*(properties_.polyDeg + 2) / 2;
+	vector<int> neighbors = kNearestNeighbors(point);
 	//build A-matrix
-	Eigen::MatrixXd coeff_mat = Eigen::MatrixXd::Zero(stencilSize_ + polyTerms, stencilSize_ + polyTerms);
-	for (int i = 0; i < stencilSize_; i++) {
-		for (int j = 0; j < stencilSize_; j++) {
+	Eigen::MatrixXd coeff_mat = Eigen::MatrixXd::Zero(properties_.stencilSize + polyTerms, properties_.stencilSize + polyTerms);
+	for (int i = 0; i < properties_.stencilSize; i++) {
+		for (int j = 0; j < properties_.stencilSize; j++) {
 			double r = distance(points_[neighbors[i]], points_[neighbors[j]]);
-			coeff_mat(i, j) = std::pow(r, rbfExp_);
-			//std::cout << coeff_mat(i, j) << std::endl;
-			/*
-			if (rbfExp_ % 2 == 0) {
-				coeff_mat(i, j) *= std::log(r);
-			}*/
+			coeff_mat(i, j) = std::pow(r, properties_.rbfExp);
 		}
 	}
 	//fill P-matrix sections.
 	int colIndex;
-	for (int row = 0; row < stencilSize_; row++) {
-		colIndex = stencilSize_;
-		for (int p = 0; p <= polyDeg_; p++) {
+	for (int row = 0; row < properties_.stencilSize; row++) {
+		colIndex = properties_.stencilSize;
+		for (int p = 0; p <= properties_.polyDeg; p++) {
 			for (int q = 0; q <= p; q++) {
 				double x = std::get<0>(points_.at(neighbors[row]));
 				double y = std::get<1>(points_.at(neighbors[row]));
@@ -155,24 +148,28 @@ std::pair<Eigen::MatrixXd, vector<int>> Grid::buildCoeffMatrix(int pointID) {
 	return std::pair<Eigen::MatrixXd, vector<int>>(coeff_mat, neighbors);
 }
 
+std::pair<Eigen::MatrixXd, vector<int>> Grid::buildCoeffMatrix(int pointID) {
+	return buildCoeffMatrix(points_[pointID]);
+}
+
 //Builds RHS and solves for the laplace weights for a point
 std::pair<Eigen::VectorXd, vector<int>> Grid::laplaceWeights (int pointID) {
 
 	std::pair<Eigen::MatrixXd, vector<int>> coeffs = buildCoeffMatrix(pointID);
 	vector<int> neighbors = coeffs.second;
-	int polyTerms = (polyDeg_ + 1)*(polyDeg_ + 2) / 2;
-	Eigen::VectorXd rhs = Eigen::VectorXd::Zero(stencilSize_ + polyTerms);
+	int polyTerms = (properties_.polyDeg + 1)*(properties_.polyDeg + 2) / 2;
+	Eigen::VectorXd rhs = Eigen::VectorXd::Zero(properties_.stencilSize + polyTerms);
 	//Build RHS
 	double xEval = std::get<0>(points_[pointID]);
 	double yEval = std::get<1>(points_[pointID]);
-	for (int i = 0; i < stencilSize_; i++) {
+	for (int i = 0; i < properties_.stencilSize; i++) {
 		double delX = std::get<0>(points_[neighbors[i]]) - xEval;
 		double delY = std::get<1>(points_[neighbors[i]]) - yEval;
-		rhs(i) = rbfExp_ * rbfExp_*std::pow(delX*delX + delY * delY, (double)(rbfExp_) / 2.0 - 1);
+		rhs(i) = properties_.rbfExp * properties_.rbfExp*std::pow(delX*delX + delY * delY, (double)(properties_.rbfExp) / 2.0 - 1);
 	}
 	//poly terms
-	int rowIndex = stencilSize_;
-	for (int p = 0; p <= polyDeg_; p++) {
+	int rowIndex = properties_.stencilSize;
+	for (int p = 0; p <= properties_.polyDeg; p++) {
 		for (int q = 0; q <= p; q++) {
 			double laplacePoly = 0;
 			if (p - q - 2 >= 0) {
@@ -185,9 +182,63 @@ std::pair<Eigen::VectorXd, vector<int>> Grid::laplaceWeights (int pointID) {
 			rowIndex++;
 		}
 	}
-	Eigen::VectorXd weights = coeffs.first.partialPivLu().solve(rhs);
+	//maybe add a condition number check here to use fullpiv or partialpiv
+	Eigen::VectorXd weights = coeffs.first.fullPivLu().solve(rhs);
 	return std::pair<Eigen::VectorXd, vector<int>>(weights, neighbors);
 }
-Eigen::VectorXd* Grid::getValues() {
-	return values_;
+std::pair<Eigen::VectorXd, vector<int>> Grid::pointInterpWeights(std::tuple<double, double, double> point) {
+	int polyTerms = (getPolyDeg() + 1)*(getPolyDeg() + 2);
+	vector<int> neighbors = kNearestNeighbors(point);
+	int matSize = getStencilSize() + polyTerms;
+	Eigen::MatrixXd coeff_mat = Eigen::MatrixXd::Zero(matSize, matSize);
+	//A-matrix
+	for (int i = 0; i < properties_.stencilSize; i++) {
+		for (int j = 0; j < properties_.stencilSize; j++) {
+			double r = distance(points_[neighbors[i]], points_[neighbors[j]]);
+			coeff_mat(i, j) = std::pow(r, properties_.rbfExp);
+		}
+	}
+	//fill P-matrix sections.
+	int colIndex;
+	for (int row = 0; row < properties_.stencilSize; row++) {
+		colIndex = properties_.stencilSize;
+		for (int p = 0; p <= properties_.polyDeg; p++) {
+			for (int q = 0; q <= p; q++) {
+				double x = std::get<0>(points_.at(neighbors[row]));
+				double y = std::get<1>(points_.at(neighbors[row]));
+				coeff_mat(row, colIndex) = std::pow(x, p - q)*std::pow(y, q);
+				coeff_mat(colIndex, row) = std::pow(x, p - q)*std::pow(y, q);
+				colIndex++;
+			}
+		}
+	}
+	Eigen::VectorXd rhs = Eigen::VectorXd::Zero(properties_.stencilSize + polyTerms);
+	//Build RHS rbf terms
+	double xEval = std::get<0>(point);
+	double yEval = std::get<1>(point);
+	for (int i = 0; i < properties_.stencilSize; i++) {
+		rhs(i) = std::pow(distance(point, points_[neighbors[i]]), properties_.rbfExp);
+	}
+	//RHS poly terms
+	int rowIndex = properties_.stencilSize;
+	for (int p = 0; p <= properties_.polyDeg; p++) {
+		for (int q = 0; q <= p; q++) {
+			rhs(rowIndex) = std::pow(xEval, p - q)*std::pow(yEval, q);
+			rowIndex++;
+		}
+	}
+	Eigen::VectorXd weights = coeff_mat.fullPivLu().solve(rhs);
+	return std::pair<Eigen::VectorXd, vector<int>>(weights, neighbors);
+}
+int Grid::getSize() {
+	return laplaceMatSize_;
+}
+int Grid::getStencilSize() {
+	return properties_.stencilSize;
+}
+int Grid::getPolyDeg() {
+	return properties_.polyDeg;
+}
+std::tuple<double, double, double> Grid::getPoint(int index) {
+	return points_[index];
 }

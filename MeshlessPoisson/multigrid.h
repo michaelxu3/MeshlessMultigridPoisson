@@ -3,10 +3,19 @@
 #include "grid.h"
 class Multigrid {
 private:
-	vector<Grid*> grids_;
+	vector<std::pair<int, Grid*>> grids_;
+	vector<int> sorGridIters_;
+	vector<Eigen::SparseMatrix<double>*> restrictionMatrices_;
+	vector<Eigen::SparseMatrix<double>*> prolongMatrices_;
+	void sortGridsBySize();
+	Eigen::SparseMatrix<double>* buildInterpMatrix(Grid* baseGrid, Grid* targetGrid);
+	void buildRestrictionMatrices();
+	void buildProlongMatrices();
+	void vCycle();
 
 public:
-	Multigrid(vector<Grid*> grids);
-	void interp_grid(Grid* baseGrid, Grid* targetGrid);
+	Multigrid();
+	~Multigrid();
+	void addGrid(Grid* grid);
 };
 #endif

@@ -9,10 +9,11 @@ int main() {
 	vector<std::tuple<vector<int>, int, vector<double>>> boundaries;
 	boundaries.resize(1);
 	std::tuple<vector<int>, int, vector<double>> & bound = boundaries[0];
-	vector<double> actualSoln;
+	vector<double> actualSoln_homog;
+	vector<double> actualSoln_inhomog;
 
-	int nx = 101;
-	int ny = 101;
+	int nx = 41;
+	int ny = 41;
 	Eigen::VectorXd source = Eigen::VectorXd(nx*ny);
 	int pointIndex = 0;
 	for (int i = 0; i < nx; i++) {
@@ -22,19 +23,20 @@ int main() {
 				std::get<0>(bound).push_back(pointIndex);
 			}
 			source(pointIndex) = -2 * pi*pi*std::sin(pi*i / (double)(nx-1))*std::sin(pi*j / (double)(ny-1));
-			actualSoln.push_back(std::sin(pi*i / (double)(nx-1))*std::sin(pi*j / (double)(ny-1)));
+			actualSoln_homog.push_back(std::sin(pi*i / (double)(nx-1))*std::sin(pi*j / (double)(ny-1)));
 			pointIndex++;
 		}
 	}
-	Grid test = Grid(points, boundaries, 3, 5, 40, 1.5);
+	Grid test = Grid(points, boundaries, 3, 7, 40, 1.5, source, 1000);
 	vector<double> bcValues = vector<double>(4*(nx-1), 0.0);
 	test.setBCFlag(0, std::string("dirichlet"), bcValues);
 	test.build_laplacian();
-	test.sor(100, source);
-	Eigen::VectorXd* soln = test.getValues();
+	test.sor();
+	Eigen::VectorXd* soln = test.values_;
 	double l1_error = 0;
 	for (int i = 0; i < nx*nx; i++) {
-		l1_error += std::abs(actualSoln.at(i) - soln->coeff(i))/nx/nx;
+		//cout << "soln: " << soln->coeff(i) << " actual soln:" << actualSoln_homog.at(i) << endl;
+		l1_error += std::abs(soln->coeff(i) - actualSoln_homog.at(i))/nx/nx;
 	}
 	cout << " L1 error: " << l1_error << endl;
 }

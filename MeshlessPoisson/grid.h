@@ -6,29 +6,38 @@
 #include <string>
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
+#include "gridclasses.hpp"
 using std::vector;
 class Grid {
 public:
-	Grid(vector<std::tuple<double, double, double>> points, vector<std::tuple<vector<int>, int, vector<double>>> boundaries, int rbfExp, int polyDeg, int stencilSize, double omega);
+	Eigen::VectorXd* values_;
+
+	Grid(vector<std::tuple<double, double, double>> points, vector<std::tuple<vector<int>, int, vector<double>>> boundaries, 
+										int rbfExp, int polyDeg, int stencilSize, double omega, Eigen::VectorXd source, int sorIters);
 	~Grid();
 	void setBCFlag(int boundary, std::string type, vector<double> boundValue);
-	void boundaryOp();
 	void build_laplacian();
-	void sor(int numIts, Eigen::VectorXd source);
-	vector <int> kNearestNeighbors(int pointNumber);
-	Eigen::VectorXd* getValues();
+	void sor();
+	vector<int> kNearestNeighbors(std::tuple<double, double, double> point);
+	std::pair<Eigen::MatrixXd, vector<int>> buildCoeffMatrix(std::tuple<double, double, double> point);
+	std::pair<Eigen::VectorXd, vector<int>> pointInterpWeights(std::tuple<double, double, double> point);
+	
+	int getSize();
+	int getStencilSize();
+	int getPolyDeg();
+	std::tuple<double, double, double> getPoint(int index);
 private:
 	vector<std::tuple<double, double, double>> points_;
 	vector<std::tuple<vector<int>, int, vector<double>>> boundaries_;
-	int rbfExp_;
-	int polyDeg_;
+	GridProperties properties_;
 	int laplaceMatSize_;
-	int stencilSize_;
+	Eigen::SparseMatrix<double>* laplaceMat_;
 	vector<int> bcFlags_;
-	double omega_;
-	Eigen::VectorXd* values_;
-	Eigen::MatrixXd* laplaceMat_;
+	Eigen::VectorXd source_;
+	int sorIters_;
 
+	void boundaryOp();
+	vector <int> kNearestNeighbors(int pointNumber);
 	std::pair<Eigen::MatrixXd, vector<int>> buildCoeffMatrix(int pointNum);
 	std::pair<Eigen::VectorXd, vector<int>> laplaceWeights(int pointID);
 };
