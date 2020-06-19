@@ -31,6 +31,7 @@ int main() {
 	vector<double> bcValues = vector<double>(4*(nx-1), 0.0);
 	test.setBCFlag(0, std::string("dirichlet"), bcValues);
 	test.build_laplacian();
+
 	test.sor();
 	Eigen::VectorXd* soln = test.values_;
 	double l1_error = 0;
