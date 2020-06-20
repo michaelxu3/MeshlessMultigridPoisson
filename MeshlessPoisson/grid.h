@@ -31,7 +31,7 @@ private:
 	vector<std::tuple<vector<int>, int, vector<double>>> boundaries_;
 	GridProperties properties_;
 	int laplaceMatSize_;
-	Eigen::SparseMatrix<double>* laplaceMat_;
+	Eigen::SparseMatrix<double, Eigen::RowMajor>* laplaceMat_;
 	vector<int> bcFlags_;
 	Eigen::VectorXd source_;
 	int sorIters_;

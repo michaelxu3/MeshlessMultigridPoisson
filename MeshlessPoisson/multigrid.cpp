@@ -50,7 +50,6 @@ void Multigrid::vCycle() {
 	Eigen::VectorXd  u_old = *(grids_[grids_.size() - 1].second->values_);
 	for (size_t i = grids_.size() - 1; i > 0;  i--) {
 		grids_[i].second->sor();
-		//std::cout << i << " " << restrictionMatrices_.size()<< " " << prolongMatrices_.size() << " "<< grids_.size()<< std::endl;
 		*(grids_[i-1].second->values_) = (*(restrictionMatrices_[i])) * (*(grids_[i].second->values_));
 	}
 	//prolongation

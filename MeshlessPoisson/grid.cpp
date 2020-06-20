@@ -13,7 +13,7 @@ Grid::Grid(vector<std::tuple<double, double, double>> points, vector<std::tuple<
 	int numPoint = (int)(points.size());
 	values_ = new Eigen::VectorXd(numPoint);
 	values_->setZero();
-	laplaceMat_ = new Eigen::SparseMatrix<double>(numPoint, numPoint);
+	laplaceMat_ = new Eigen::SparseMatrix<double, Eigen::RowMajor>(numPoint, numPoint);
 	laplaceMat_->setZero();
 	properties_.stencilSize = stencilSize;
 	properties_.omega = omega;
@@ -66,21 +66,63 @@ void Grid::build_laplacian() {
 		}
 	}
 	laplaceMat_->setFromTriplets(tripletList.begin(), tripletList.end());
+	laplaceMat_->makeCompressed();
 }
 
 void Grid::sor() {
 	boundaryOp();
 	
-	double residual;
-	double x_i;
+	double x_i, diagCoeff;
+
+	const double* laplaceValues = laplaceMat_->valuePtr();
+	//column indices of values
+	const int* innerValues = laplaceMat_->innerIndexPtr();
+	//index in values of first nonzero entry of each row, has size of (laplaceMatSize + 1) with last value being the # of nonzeros/end flag.
+	const int* outerValues = laplaceMat_->outerIndexPtr();
+
+	int valueIdx, innerIdx, outerIdx, rowStartIdx, rowEndIdx;
+	int numNonZeros = laplaceMat_->nonZeros();
+
 	for (int it = 0; it < properties_.iters; it++) {		// set/enforce the boundary conditions
-		//residual = 0;
+		valueIdx = 0;
+		innerIdx = 0;
+		outerIdx = 0;
+
+		for (int i = 0; i < laplaceMatSize_; i++){
+			
+			if (bcFlags_[i] != 0) {
+				outerIdx++;
+				continue;
+			}
+		
+			x_i = 0;
+			diagCoeff = 0;
+			rowStartIdx = outerValues[outerIdx];
+			rowEndIdx = outerValues[outerIdx + 1];
+			//sum coeffs*x_i_old on the row i
+			for (int j = rowStartIdx; j < rowEndIdx; j++) {
+				//std::cout << laplaceValues[j] << " " << laplaceMat_->coeff(i, innerValues[j]) << std::endl;
+				if (innerValues[j] == i) {
+					diagCoeff = laplaceValues[j];
+					continue;
+				}
+				x_i -= laplaceValues[j] * values_->coeff(innerValues[j]);
+			}
+			x_i += source_.coeff(i);
+			x_i *= properties_.omega / diagCoeff;
+			x_i += (1 - properties_.omega)*values_->coeff(i);
+			values_->coeffRef(i) = x_i;
+			outerIdx++;
+		}
+		/*
 		for (int i = 0; i < laplaceMatSize_; i++) {
+			//laplaceMat_->inner
 			double x_i_old = values_->coeff(i);
 			if (bcFlags_[i] != 0) {
 				continue;
 			}
 			x_i = 0;
+
 			double diagCoeff = laplaceMat_->coeff(i, i);
 			x_i += (1 - properties_.omega)*values_->coeff(i) + properties_.omega / diagCoeff * source_.coeff(i);
 			for (int j = 0; j < laplaceMatSize_; j++) {
@@ -88,11 +130,13 @@ void Grid::sor() {
 					x_i -= properties_.omega / diagCoeff * laplaceMat_->coeff(i, j)*values_->coeff(j);
 				}
 			}
+			//row major laplacian matrix
 			values_->coeffRef(i) = x_i;
 			//residual += (x_i - x_i_old);
 		}
 		//residual = (residual / laplaceMatSize_);
 		//std::cout << "residual: " << residual << std::endl;
+		*/
 	}
 }
 //Fix distance function if we want to extend code to 3D. Makes and sorts a distance array with int point IDs. Brute force, so O(n log n) time
@@ -107,8 +151,22 @@ vector<int> Grid::kNearestNeighbors(std::tuple<double, double, double> refPoint)
 		distances.push_back(std::pair<double, int>(distance(refPoint, queryPoint), i));
 	}
 	//std::sort sorts pairs by first (distance)
-	std::sort(distances.begin(), distances.end());
+	//std::sort(distances.begin(), distances.end());
 
+	
+	//Partial Selection Sort algorithm, O(kn) time, somehow takes more time than std::sort on VS.
+	for (int i = 0; i < properties_.stencilSize; i++) {
+		int minIndex = i;
+		std::pair<double, int> minDistPoint = distances[i];
+		for (size_t j = i+1; j < points_.size(); j++) {
+			if (distances[j] < minDistPoint) {
+				minIndex = j;
+				minDistPoint = distances[j];
+				std::swap(distances[i], distances[minIndex]);
+			}
+		}
+	}
+	
 	vector<int> nearestNeighbors;
 	//Have to include point itself in the stencil since otherwise diag would be zeros.
 	for (int i = 0; i < properties_.stencilSize; i++) {

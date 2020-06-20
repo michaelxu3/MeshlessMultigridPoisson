@@ -41,13 +41,17 @@ Grid* generateHomogDirichletGrid(int nx, int ny) {
 	cout << " L1 error: " << l1_error << endl;
 	*/
 }
+int filler() {
+	return 10;
+}
 int main() {
 	Multigrid mg = Multigrid();
-	//mg.addGrid(generateHomogDirichletGrid(101, 101));
+	mg.addGrid(generateHomogDirichletGrid(101, 101));
 	mg.addGrid(generateHomogDirichletGrid(51, 51));
 	mg.addGrid(generateHomogDirichletGrid(26, 26));
 	mg.addGrid(generateHomogDirichletGrid(13, 13));
 	mg.buildMatrices();
+	int k = filler();
 	for (int i = 0; i < 10; i++) {
 		mg.vCycle();
 	}
