@@ -11,11 +11,12 @@ private:
 	Eigen::SparseMatrix<double>* buildInterpMatrix(Grid* baseGrid, Grid* targetGrid);
 	void buildRestrictionMatrices();
 	void buildProlongMatrices();
-	void vCycle();
 
 public:
 	Multigrid();
 	~Multigrid();
 	void addGrid(Grid* grid);
+	void buildMatrices();
+	void vCycle();
 };
 #endif

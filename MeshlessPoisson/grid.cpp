@@ -74,7 +74,7 @@ void Grid::sor() {
 	double residual;
 	double x_i;
 	for (int it = 0; it < properties_.iters; it++) {		// set/enforce the boundary conditions
-		residual = 0;
+		//residual = 0;
 		for (int i = 0; i < laplaceMatSize_; i++) {
 			double x_i_old = values_->coeff(i);
 			if (bcFlags_[i] != 0) {
@@ -89,10 +89,10 @@ void Grid::sor() {
 				}
 			}
 			values_->coeffRef(i) = x_i;
-			residual += (x_i - x_i_old);
+			//residual += (x_i - x_i_old);
 		}
-		residual = (residual / laplaceMatSize_);
-		std::cout << "residual: " << residual << std::endl;
+		//residual = (residual / laplaceMatSize_);
+		//std::cout << "residual: " << residual << std::endl;
 	}
 }
 //Fix distance function if we want to extend code to 3D. Makes and sorts a distance array with int point IDs. Brute force, so O(n log n) time

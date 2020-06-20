@@ -1,4 +1,5 @@
 #include "multigrid.h"
+#include <iostream>
 Multigrid::Multigrid() {
 
 	grids_ = vector<std::pair<int, Grid*>>(); //int = grid size
@@ -12,7 +13,7 @@ Multigrid::~Multigrid() {
 }
 Eigen::SparseMatrix<double>* Multigrid::buildInterpMatrix(Grid* baseGrid, Grid* targetGrid) {
 	//matrix is n x m where m is size of target grid, n is size of base grid
-	Eigen::SparseMatrix<double>* interpMatrix = new Eigen::SparseMatrix<double>(baseGrid->getSize(), targetGrid->getSize());
+	Eigen::SparseMatrix<double>* interpMatrix = new Eigen::SparseMatrix<double>(targetGrid->getSize(), baseGrid->getSize());
 	vector<Eigen::Triplet<double>> tripletList;
 
 	for (int i = 0; i < targetGrid->getSize(); i++) {
@@ -35,22 +36,31 @@ void Multigrid::buildProlongMatrices() {
 }
 void Multigrid::buildRestrictionMatrices() {
 	restrictionMatrices_.resize(grids_.size());
-	prolongMatrices_[0] = NULL;
+	restrictionMatrices_[0] = NULL;
 	for (size_t i = 1; i < grids_.size(); i++) {
-		prolongMatrices_[i] = buildInterpMatrix(grids_[i].second, grids_[i - 1].second);
+		restrictionMatrices_[i] = buildInterpMatrix(grids_[i].second, grids_[i - 1].second);
 	}
+}
+void Multigrid::buildMatrices() {
+	buildProlongMatrices();
+	buildRestrictionMatrices();
 }
 void Multigrid::vCycle() {
 	//Restriction
+	Eigen::VectorXd  u_old = *(grids_[grids_.size() - 1].second->values_);
 	for (size_t i = grids_.size() - 1; i > 0;  i--) {
 		grids_[i].second->sor();
-		*(grids_[i-1].second->values_) = (*(restrictionMatrices_[i])) * (*grids_[i].second->values_);
+		//std::cout << i << " " << restrictionMatrices_.size()<< " " << prolongMatrices_.size() << " "<< grids_.size()<< std::endl;
+		*(grids_[i-1].second->values_) = (*(restrictionMatrices_[i])) * (*(grids_[i].second->values_));
 	}
 	//prolongation
 	for (size_t i = 0; i < grids_.size() - 1; i++) {
 		grids_[i].second->sor();
 		*(grids_[i+1].second->values_) = (*(prolongMatrices_[i])) * (*grids_[i].second->values_);
 	}
+	double residual = (*(grids_[grids_.size() - 1].second->values_) - u_old).norm()/grids_[grids_.size() - 1].first;
+	std::cout << "Residual: " << residual << std::endl;
+
 }
 void Multigrid::addGrid(Grid* grid) {
 	grids_.push_back(std::pair<int, Grid*>(grid->getSize(), grid));
