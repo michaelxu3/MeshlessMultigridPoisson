@@ -121,7 +121,7 @@ vector<int> Grid::kNearestNeighbors(int pointID) {
 
 vector<int> Grid::kNearestNeighbors(std::tuple<double, double, double> refPoint) {
 	vector<std::pair<double, int>> distances;
-	for (size_t i = 0; i < points_.size(); i++) {
+	for (int i = 0; i < laplaceMatSize_; i++) {
 		std::tuple<double, double, double> queryPoint = points_[i];
 		distances.push_back(std::pair<double, int>(distance(refPoint, queryPoint), i));
 	}
@@ -129,23 +129,27 @@ vector<int> Grid::kNearestNeighbors(std::tuple<double, double, double> refPoint)
 	//std::sort(distances.begin(), distances.end());
 
 	
-	//Partial Selection Sort algorithm, O(kn) time, somehow takes more time than std::sort on VS.
-	for (int i = 0; i < properties_.stencilSize; i++) {
-		int minIndex = i;
-		std::pair<double, int> minDistPoint = distances[i];
-		for (size_t j = i+1; j < points_.size(); j++) {
-			if (distances[j] < minDistPoint) {
-				minIndex = j;
-				minDistPoint = distances[j];
-				std::swap(distances[i], distances[minIndex]);
-			}
+	//max-heap selection algorithm
+	int k = properties_.stencilSize;
+	vector<std::pair<double, int>> maxHeap;
+	for (int i = 0; i < k; i++) {
+		maxHeap.push_back(distances[i]);
+	}
+	std::make_heap(maxHeap.begin(), maxHeap.end());
+	for (int i = k; i < laplaceMatSize_; i++) {
+		if (distances[i] < maxHeap.front()) {
+			std::pop_heap(maxHeap.begin(), maxHeap.end());
+			maxHeap.pop_back();
+
+			maxHeap.push_back(distances[i]);
+			std::push_heap(maxHeap.begin(), maxHeap.end());
 		}
 	}
-	
+	std::sort_heap(maxHeap.begin(), maxHeap.end());
 	vector<int> nearestNeighbors;
 	//Have to include point itself in the stencil since otherwise diag would be zeros.
-	for (int i = 0; i < properties_.stencilSize; i++) {
-		nearestNeighbors.push_back(distances[i].second);
+	for (int i = 0; i < k; i++) {
+		nearestNeighbors.push_back(maxHeap[i].second);
 	}
 	return nearestNeighbors;
 }

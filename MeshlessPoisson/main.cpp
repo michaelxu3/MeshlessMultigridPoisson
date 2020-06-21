@@ -57,12 +57,12 @@ int main() {
 	*/
 	Multigrid mg = Multigrid();
 	clock_t start = std::clock();
-	//mg.addGrid(generateHomogDirichletGrid(1001, 1001));
-	//mg.addGrid(generateHomogDirichletGrid(501, 501));
-	//mg.addGrid(generateHomogDirichletGrid(251, 251));
-	mg.addGrid(generateHomogDirichletGrid(126, 126));
+	//mg.addGrid(generateHomogDirichletGrid(1000, 1000));
+	//mg.addGrid(generateHomogDirichletGrid(500, 500));
+	//mg.addGrid(generateHomogDirichletGrid(250, 250));
+	mg.addGrid(generateHomogDirichletGrid(125, 125));
 	mg.addGrid(generateHomogDirichletGrid(63, 63));
-	mg.addGrid(generateHomogDirichletGrid(31, 31));
+	mg.addGrid(generateHomogDirichletGrid(32, 32));
 	mg.addGrid(generateHomogDirichletGrid(16, 16));
 	mg.buildMatrices();
 	clock_t build = std::clock();
