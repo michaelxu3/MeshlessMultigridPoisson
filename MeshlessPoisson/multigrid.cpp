@@ -12,7 +12,7 @@ Multigrid::~Multigrid() {
 	}
 }
 Eigen::SparseMatrix<double>* Multigrid::buildInterpMatrix(Grid* baseGrid, Grid* targetGrid) {
-	//matrix is n x m where m is size of target grid, n is size of base grid
+
 	Eigen::SparseMatrix<double>* interpMatrix = new Eigen::SparseMatrix<double>(targetGrid->getSize(), baseGrid->getSize());
 	vector<Eigen::Triplet<double>> tripletList;
 

@@ -3,23 +3,22 @@
 #include "math.h"
 #include <iostream>
 #include <algorithm>
-Grid::Grid(vector<std::tuple<double, double, double>> points, vector<std::tuple<vector<int>, int, vector<double>>> boundaries,
-										int rbfExp, int polyDeg, int stencilSize, double omega, Eigen::VectorXd source, int sorIters) {
+Grid::Grid(vector<std::tuple<double, double, double>> points, vector<Boundary> boundaries ,
+					GridProperties properties, Eigen::VectorXd source) {
+	int numPoint = (int)(points.size());
 	points_ = points;
 	boundaries_ = boundaries;
-	properties_.rbfExp = rbfExp;
-	properties_.polyDeg = polyDeg;
+	bcFlags_ = std::vector<int>(numPoint);
+	properties_ = properties;
+	source_ = source;
+
+
+
 	laplaceMatSize_ = (int)(points.size());
-	int numPoint = (int)(points.size());
 	values_ = new Eigen::VectorXd(numPoint);
 	values_->setZero();
 	laplaceMat_ = new Eigen::SparseMatrix<double, Eigen::RowMajor>(numPoint, numPoint);
 	laplaceMat_->setZero();
-	properties_.stencilSize = stencilSize;
-	properties_.omega = omega;
-	bcFlags_ = std::vector<int>(numPoint);
-	properties_.iters = sorIters;
-	source_ = source;
 }
 Grid::~Grid() {
 	delete values_;
@@ -35,20 +34,20 @@ void Grid::setBCFlag(int bNum, std::string type, vector<double> boundValues) {
 	if (type.compare("dirichlet") != 0 && !type.compare("neumann") != 0) {
 		throw std::invalid_argument("Specified Boundary Condition on Boundary #" + std::to_string(bNum) + " is not dirichlet or neumann");
 	}
-	std::tuple<vector<int>, int, vector<double>> & bound = boundaries_.at(bNum);
-	std::get<1>(bound) = type.compare("dirichlet") == 0 ? 1: 2;
-	for (size_t i = 0; i < std::get<0>(bound).size(); i++) {
-		bcFlags_[std::get<0>(bound)[i]] = std::get<1>(bound);
+	Boundary & bound = boundaries_.at(bNum);
+	(bound.type) = type.compare("dirichlet") == 0 ? 1: 2;
+	for (size_t i = 0; i < (bound.bcPoints).size(); i++) {
+		bcFlags_[(bound.bcPoints)[i]] = (bound.type);
 	}
-	std::get<2>(bound) = boundValues;
+	(bound.values) = boundValues;
 }
 
 void Grid::boundaryOp() {
 	for (size_t i = 0; i < boundaries_.size(); i++) {
 		//dirichlet
-		if (std::get<1>(boundaries_[i]) == 1){
-			for (size_t j = 0; j < std::get<0>(boundaries_[i]).size(); j++) {
-				(*values_)(std::get<0>(boundaries_[i]).at(j)) = std::get<2>(boundaries_[i]).at(j);
+		if ((boundaries_[i]).type == 1){
+			for (size_t j = 0; j < (boundaries_[i].bcPoints).size(); j++) {
+				(*values_)((boundaries_[i].bcPoints).at(j)) = (boundaries_[i].values).at(j);
 			}
 		}
 		//implement neumann later.
@@ -83,7 +82,7 @@ void Grid::sor() {
 	int valueIdx, innerIdx, outerIdx, rowStartIdx, rowEndIdx;
 	int numNonZeros = laplaceMat_->nonZeros();
 
-	for (int it = 0; it < properties_.iters; it++) {		// set/enforce the boundary conditions
+	for (int it = 0; it < properties_.iters; it++) {
 		valueIdx = 0;
 		innerIdx = 0;
 		outerIdx = 0;
@@ -101,7 +100,6 @@ void Grid::sor() {
 			rowEndIdx = outerValues[outerIdx + 1];
 			//sum coeffs*x_i_old on the row i
 			for (int j = rowStartIdx; j < rowEndIdx; j++) {
-				//std::cout << laplaceValues[j] << " " << laplaceMat_->coeff(i, innerValues[j]) << std::endl;
 				if (innerValues[j] == i) {
 					diagCoeff = laplaceValues[j];
 					continue;
@@ -114,29 +112,6 @@ void Grid::sor() {
 			values_->coeffRef(i) = x_i;
 			outerIdx++;
 		}
-		/*
-		for (int i = 0; i < laplaceMatSize_; i++) {
-			//laplaceMat_->inner
-			double x_i_old = values_->coeff(i);
-			if (bcFlags_[i] != 0) {
-				continue;
-			}
-			x_i = 0;
-
-			double diagCoeff = laplaceMat_->coeff(i, i);
-			x_i += (1 - properties_.omega)*values_->coeff(i) + properties_.omega / diagCoeff * source_.coeff(i);
-			for (int j = 0; j < laplaceMatSize_; j++) {
-				if (i != j) {
-					x_i -= properties_.omega / diagCoeff * laplaceMat_->coeff(i, j)*values_->coeff(j);
-				}
-			}
-			//row major laplacian matrix
-			values_->coeffRef(i) = x_i;
-			//residual += (x_i - x_i_old);
-		}
-		//residual = (residual / laplaceMatSize_);
-		//std::cout << "residual: " << residual << std::endl;
-		*/
 	}
 }
 //Fix distance function if we want to extend code to 3D. Makes and sorts a distance array with int point IDs. Brute force, so O(n log n) time
@@ -181,10 +156,14 @@ std::pair<Eigen::MatrixXd, vector<int>> Grid::buildCoeffMatrix(std::tuple<double
 	vector<int> neighbors = kNearestNeighbors(point);
 	//build A-matrix
 	Eigen::MatrixXd coeff_mat = Eigen::MatrixXd::Zero(properties_.stencilSize + polyTerms, properties_.stencilSize + polyTerms);
+	//Exploit Symmetry and Diagonals being zero.
+	double a_coeff;
 	for (int i = 0; i < properties_.stencilSize; i++) {
-		for (int j = 0; j < properties_.stencilSize; j++) {
+		for (int j = i; j < properties_.stencilSize; j++) {
 			double r = distance(points_[neighbors[i]], points_[neighbors[j]]);
-			coeff_mat(i, j) = std::pow(r, properties_.rbfExp);
+			a_coeff = std::pow(r, properties_.rbfExp);
+			coeff_mat(i, j) = a_coeff;
+			coeff_mat(j, i) = a_coeff;
 		}
 	}
 	//fill P-matrix sections.
@@ -201,7 +180,6 @@ std::pair<Eigen::MatrixXd, vector<int>> Grid::buildCoeffMatrix(std::tuple<double
 			}
 		}
 	}
-	//std::cout << "Condition number: " << coeff_mat.norm()*coeff_mat.inverse().norm() << std::endl;
 	//Rest of the matrix should automatically be zeros.
 	return std::pair<Eigen::MatrixXd, vector<int>>(coeff_mat, neighbors);
 }
@@ -241,7 +219,7 @@ std::pair<Eigen::VectorXd, vector<int>> Grid::laplaceWeights (int pointID) {
 		}
 	}
 	//maybe add a condition number check here to use fullpiv or partialpiv
-	Eigen::VectorXd weights = coeffs.first.fullPivLu().solve(rhs);
+	Eigen::VectorXd weights = coeffs.first.partialPivLu().solve(rhs);
 	return std::pair<Eigen::VectorXd, vector<int>>(weights, neighbors);
 }
 std::pair<Eigen::VectorXd, vector<int>> Grid::pointInterpWeights(std::tuple<double, double, double> point) {
@@ -250,10 +228,13 @@ std::pair<Eigen::VectorXd, vector<int>> Grid::pointInterpWeights(std::tuple<doub
 	int matSize = getStencilSize() + polyTerms;
 	Eigen::MatrixXd coeff_mat = Eigen::MatrixXd::Zero(matSize, matSize);
 	//A-matrix
+	double a_coeff;
 	for (int i = 0; i < properties_.stencilSize; i++) {
-		for (int j = 0; j < properties_.stencilSize; j++) {
+		for (int j = i; j < properties_.stencilSize; j++) {
 			double r = distance(points_[neighbors[i]], points_[neighbors[j]]);
-			coeff_mat(i, j) = std::pow(r, properties_.rbfExp);
+			a_coeff = std::pow(r, properties_.rbfExp);
+			coeff_mat(i, j) = a_coeff;
+			coeff_mat(j, i) = a_coeff;
 		}
 	}
 	//fill P-matrix sections.
@@ -285,7 +266,7 @@ std::pair<Eigen::VectorXd, vector<int>> Grid::pointInterpWeights(std::tuple<doub
 			rowIndex++;
 		}
 	}
-	Eigen::VectorXd weights = coeff_mat.fullPivLu().solve(rhs);
+	Eigen::VectorXd weights = coeff_mat.partialPivLu().solve(rhs);
 	return std::pair<Eigen::VectorXd, vector<int>>(weights, neighbors);
 }
 int Grid::getSize() {

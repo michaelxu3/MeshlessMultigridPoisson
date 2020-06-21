@@ -12,8 +12,8 @@ class Grid {
 public:
 	Eigen::VectorXd* values_;
 
-	Grid(vector<std::tuple<double, double, double>> points, vector<std::tuple<vector<int>, int, vector<double>>> boundaries, 
-										int rbfExp, int polyDeg, int stencilSize, double omega, Eigen::VectorXd source, int sorIters);
+	Grid(vector<std::tuple<double, double, double>> points, vector<Boundary> boundaries, 
+				GridProperties properties, Eigen::VectorXd source);
 	~Grid();
 	void setBCFlag(int boundary, std::string type, vector<double> boundValue);
 	void build_laplacian();
@@ -28,7 +28,7 @@ public:
 	std::tuple<double, double, double> getPoint(int index);
 private:
 	vector<std::tuple<double, double, double>> points_;
-	vector<std::tuple<vector<int>, int, vector<double>>> boundaries_;
+	vector<Boundary> boundaries_;
 	GridProperties properties_;
 	int laplaceMatSize_;
 	Eigen::SparseMatrix<double, Eigen::RowMajor>* laplaceMat_;

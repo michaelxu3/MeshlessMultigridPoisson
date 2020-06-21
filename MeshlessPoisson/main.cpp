@@ -25,34 +25,51 @@ Grid* generateHomogDirichletGrid(int nx, int ny) {
 			pointIndex++;
 		}
 	}
-	Grid* grid = new Grid(points, boundaries, 3, 5, 40, 1.5, source, 7);
+	Boundary boundary;
+	boundary.bcPoints = std::get<0>(boundaries[0]);
+	boundary.type = std::get<1>(boundaries[0]);
+	boundary.values = std::get<2>(boundaries[0]);
+	vector<Boundary> bcs;
+	bcs.push_back(boundary);
+	GridProperties props;
+	props.rbfExp = 3;
+	props.iters = 7;
+	props.polyDeg = 5;
+	props.stencilSize = 40;
+	props.omega = 1.5;
+	Grid* grid = new Grid(points, bcs, props, source);
 	vector<double> bcValues = vector<double>(4*(nx-1), 0.0);
 	grid->setBCFlag(0, std::string("dirichlet"), bcValues);
 	grid->build_laplacian();
 	return grid;
-	/*
-	test.sor();
-	Eigen::VectorXd* soln = test.values_;
-	double l1_error = 0;
-	for (int i = 0; i < nx*nx; i++) {
-		//cout << "soln: " << soln->coeff(i) << " actual soln:" << actualSoln_homog.at(i) << endl;
-		l1_error += std::abs(soln->coeff(i) - actualSoln_homog.at(i))/nx/nx;
-	}
-	cout << " L1 error: " << l1_error << endl;
-	*/
 }
 int filler() {
 	return 10;
 }
 int main() {
+	//100x100 sor now runs in 51 ms.
+	/*
+	Grid* testGrid = generateHomogDirichletGrid(100, 100);
+	clock_t start = std::clock();
+	testGrid->sor();
+	clock_t time = std::clock() - start;
+	cout << time/((double)CLOCKS_PER_SEC) << endl;
+	*/
 	Multigrid mg = Multigrid();
-	mg.addGrid(generateHomogDirichletGrid(101, 101));
-	mg.addGrid(generateHomogDirichletGrid(51, 51));
-	mg.addGrid(generateHomogDirichletGrid(26, 26));
-	mg.addGrid(generateHomogDirichletGrid(13, 13));
+	clock_t start = std::clock();
+	//mg.addGrid(generateHomogDirichletGrid(1001, 1001));
+	//mg.addGrid(generateHomogDirichletGrid(501, 501));
+	//mg.addGrid(generateHomogDirichletGrid(251, 251));
+	mg.addGrid(generateHomogDirichletGrid(126, 126));
+	mg.addGrid(generateHomogDirichletGrid(63, 63));
+	mg.addGrid(generateHomogDirichletGrid(31, 31));
+	mg.addGrid(generateHomogDirichletGrid(16, 16));
 	mg.buildMatrices();
+	clock_t build = std::clock();
+	cout << (build - start) / ((double)CLOCKS_PER_SEC) << endl;
 	int k = filler();
-	for (int i = 0; i < 10; i++) {
+	for (int i = 0; i < 30; i++) {
 		mg.vCycle();
 	}
+	cout << (std::clock() - build) / ((double)CLOCKS_PER_SEC) << endl;
 }

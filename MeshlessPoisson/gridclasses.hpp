@@ -12,6 +12,6 @@ public:
 class Boundary {
 public:
 	int type;
-	std::vector<int> points;
+	std::vector<int> bcPoints;
 	std::vector<double> values;
 };
