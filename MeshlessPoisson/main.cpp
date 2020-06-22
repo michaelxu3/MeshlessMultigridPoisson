@@ -60,8 +60,8 @@ int main() {
 	//mg.addGrid(generateHomogDirichletGrid(1000, 1000));
 	//mg.addGrid(generateHomogDirichletGrid(500, 500));
 	//mg.addGrid(generateHomogDirichletGrid(250, 250));
-	mg.addGrid(generateHomogDirichletGrid(125, 125));
-	mg.addGrid(generateHomogDirichletGrid(63, 63));
+	//mg.addGrid(generateHomogDirichletGrid(125, 125));
+	//mg.addGrid(generateHomogDirichletGrid(63, 63));
 	mg.addGrid(generateHomogDirichletGrid(32, 32));
 	mg.addGrid(generateHomogDirichletGrid(16, 16));
 	mg.buildMatrices();
