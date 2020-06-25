@@ -3,6 +3,7 @@
 #include "math.h"
 #include <iostream>
 #include <algorithm>
+
 Grid::Grid(vector<std::tuple<double, double, double>> points, vector<Boundary> boundaries ,
 					GridProperties properties, Eigen::VectorXd source) {
 	int numPoint = (int)(points.size());
@@ -17,12 +18,15 @@ Grid::Grid(vector<std::tuple<double, double, double>> points, vector<Boundary> b
 	laplaceMatSize_ = (int)(points.size());
 	values_ = new Eigen::VectorXd(numPoint);
 	values_->setZero();
+	residuals_ = new Eigen::VectorXd(numPoint);
+	residuals_->setZero();
 	laplaceMat_ = new Eigen::SparseMatrix<double, Eigen::RowMajor>(numPoint, numPoint);
 	laplaceMat_->setZero();
 }
 Grid::~Grid() {
 	delete values_;
 	delete laplaceMat_;
+	delete residuals_;
 }
 
 double distance(std::tuple<double, double, double> refPoint, std::tuple<double, double, double> queryPoint) {
@@ -31,29 +35,25 @@ double distance(std::tuple<double, double, double> refPoint, std::tuple<double, 
 }
 
 void Grid::setBCFlag(int bNum, std::string type, vector<double> boundValues) {
-	if (type.compare("dirichlet") != 0 && !type.compare("neumann") != 0) {
-		throw std::invalid_argument("Specified Boundary Condition on Boundary #" + std::to_string(bNum) + " is not dirichlet or neumann");
-	}
 	Boundary & bound = boundaries_.at(bNum);
-	(bound.type) = type.compare("dirichlet") == 0 ? 1: 2;
+	(bound.type) = type.compare("dirichlet") == 0 ? 1 : 2;
 	for (size_t i = 0; i < (bound.bcPoints).size(); i++) {
 		bcFlags_[(bound.bcPoints)[i]] = (bound.type);
 	}
 	(bound.values) = boundValues;
 }
 
-void Grid::boundaryOp() {
+void Grid::boundaryOp(std::string coarse) {
 	for (size_t i = 0; i < boundaries_.size(); i++) {
 		//dirichlet
 		if ((boundaries_[i]).type == 1){
 			for (size_t j = 0; j < (boundaries_[i].bcPoints).size(); j++) {
-				(*values_)((boundaries_[i].bcPoints).at(j)) = (boundaries_[i].values).at(j);
+				(*values_)((boundaries_[i].bcPoints).at(j)) = coarse.compare("coarse") == 0 ? 0 : (boundaries_[i].values).at(j);
 			}
 		}
 		//implement neumann later.
 	}
 }
-
 //Builds Sparse Matrix that approximates laplacian operator for SOR from the interpolation weights.
 void Grid::build_laplacian() {
 	vector<Eigen::Triplet<double>> tripletList;
@@ -68,28 +68,26 @@ void Grid::build_laplacian() {
 	laplaceMat_->makeCompressed();
 }
 
-void Grid::sor() {
-	boundaryOp();
-	
+void Grid::sor(Eigen::SparseMatrix<double, 1>* matrix, Eigen::VectorXd* values, Eigen::VectorXd* rhs) {
 	double x_i, diagCoeff;
 
-	const double* laplaceValues = laplaceMat_->valuePtr();
+	const double* laplaceValues = matrix->valuePtr();
 	//column indices of values
-	const int* innerValues = laplaceMat_->innerIndexPtr();
+	const int* innerValues = matrix->innerIndexPtr();
 	//index in values of first nonzero entry of each row, has size of (laplaceMatSize + 1) with last value being the # of nonzeros/end flag.
-	const int* outerValues = laplaceMat_->outerIndexPtr();
+	const int* outerValues = matrix->outerIndexPtr();
 
 	int valueIdx, innerIdx, outerIdx, rowStartIdx, rowEndIdx;
-	int numNonZeros = laplaceMat_->nonZeros();
+	int numNonZeros = matrix->nonZeros();
 
 	for (int it = 0; it < properties_.iters; it++) {
 		valueIdx = 0;
 		innerIdx = 0;
 		outerIdx = 0;
 
-		for (int i = 0; i < laplaceMatSize_; i++){
-			
-			if (bcFlags_[i] != 0) {
+		for (int i = 0; i < matrix->rows(); i++){
+			//dirichlet bc
+			if (bcFlags_[i] == 1) {
 				outerIdx++;
 				continue;
 			}
@@ -104,15 +102,22 @@ void Grid::sor() {
 					diagCoeff = laplaceValues[j];
 					continue;
 				}
-				x_i -= laplaceValues[j] * values_->coeff(innerValues[j]);
+				x_i -= laplaceValues[j] * values->coeff(innerValues[j]);
 			}
-			x_i += source_.coeff(i);
+			//residual here
+			//take last residual and restrict
+			//source - ap phi_nb
+			x_i += rhs->coeff(i);
+
 			x_i *= properties_.omega / diagCoeff;
-			x_i += (1 - properties_.omega)*values_->coeff(i);
-			values_->coeffRef(i) = x_i;
+			x_i += (1 - properties_.omega)*values->coeff(i);
+			values->coeffRef(i) = x_i;
 			outerIdx++;
 		}
 	}
+}
+Eigen::VectorXd Grid::residual() {
+	return source_ - (*laplaceMat_) * (*values_);
 }
 //Fix distance function if we want to extend code to 3D. Makes and sorts a distance array with int point IDs. Brute force, so O(n log n) time
 vector<int> Grid::kNearestNeighbors(int pointID) {
@@ -125,8 +130,6 @@ vector<int> Grid::kNearestNeighbors(std::tuple<double, double, double> refPoint)
 		std::tuple<double, double, double> queryPoint = points_[i];
 		distances.push_back(std::pair<double, int>(distance(refPoint, queryPoint), i));
 	}
-	//std::sort sorts pairs by first (distance)
-	//std::sort(distances.begin(), distances.end());
 
 	
 	//max-heap selection algorithm
@@ -185,7 +188,7 @@ std::pair<Eigen::MatrixXd, vector<int>> Grid::buildCoeffMatrix(std::tuple<double
 		}
 	}
 	//Rest of the matrix should automatically be zeros.
-	return std::pair<Eigen::MatrixXd, vector<int>>(coeff_mat, neighbors);
+	 return std::pair<Eigen::MatrixXd, vector<int>>(coeff_mat, neighbors);
 }
 
 std::pair<Eigen::MatrixXd, vector<int>> Grid::buildCoeffMatrix(int pointID) {
@@ -223,7 +226,7 @@ std::pair<Eigen::VectorXd, vector<int>> Grid::laplaceWeights (int pointID) {
 		}
 	}
 	//maybe add a condition number check here to use fullpiv or partialpiv
-	Eigen::VectorXd weights = coeffs.first.partialPivLu().solve(rhs);
+	Eigen::VectorXd weights = coeffs.first.fullPivLu().solve(rhs);
 	return std::pair<Eigen::VectorXd, vector<int>>(weights, neighbors);
 }
 std::pair<Eigen::VectorXd, vector<int>> Grid::pointInterpWeights(std::tuple<double, double, double> point) {
@@ -270,7 +273,8 @@ std::pair<Eigen::VectorXd, vector<int>> Grid::pointInterpWeights(std::tuple<doub
 			rowIndex++;
 		}
 	}
-	Eigen::VectorXd weights = coeff_mat.partialPivLu().solve(rhs);
+	//std::cout << "interp condition number: " << coeff_mat.norm() * coeff_mat.inverse().norm() << std::endl;
+	Eigen::VectorXd weights = coeff_mat.fullPivLu().solve(rhs);
 	return std::pair<Eigen::VectorXd, vector<int>>(weights, neighbors);
 }
 int Grid::getSize() {

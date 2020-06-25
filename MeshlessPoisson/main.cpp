@@ -35,7 +35,7 @@ Grid* generateHomogDirichletGrid(int nx, int ny) {
 	props.rbfExp = 3;
 	props.iters = 7;
 	props.polyDeg = 5;
-	props.stencilSize = 40;
+	props.stencilSize = 46;
 	props.omega = 1.5;
 	Grid* grid = new Grid(points, bcs, props, source);
 	vector<double> bcValues = vector<double>(4*(nx-1), 0.0);
@@ -43,33 +43,35 @@ Grid* generateHomogDirichletGrid(int nx, int ny) {
 	grid->build_laplacian();
 	return grid;
 }
-int filler() {
-	return 10;
-}
-int main() {
+
+ int main() {
 	//100x100 sor now runs in 51 ms.
 	/*
-	Grid* testGrid = generateHomogDirichletGrid(100, 100);
-	clock_t start = std::clock();
-	testGrid->sor();
-	clock_t time = std::clock() - start;
-	cout << time/((double)CLOCKS_PER_SEC) << endl;
+	Grid* testGrid = generateHomogDirichletGrid(50, 50);
+	testGrid->boundaryOp("fine");
+	for (int i = 0; i < 1000; i++) {
+		testGrid->sor(testGrid->laplaceMat_, testGrid->values_, &testGrid->source_);
+		cout << testGrid->residual().norm() / testGrid->source_.norm() << endl;
+	}
+	
 	*/
+	
 	Multigrid mg = Multigrid();
 	clock_t start = std::clock();
 	//mg.addGrid(generateHomogDirichletGrid(1000, 1000));
 	//mg.addGrid(generateHomogDirichletGrid(500, 500));
 	//mg.addGrid(generateHomogDirichletGrid(250, 250));
 	//mg.addGrid(generateHomogDirichletGrid(125, 125));
-	//mg.addGrid(generateHomogDirichletGrid(63, 63));
+	mg.addGrid(generateHomogDirichletGrid(63, 63));
 	mg.addGrid(generateHomogDirichletGrid(32, 32));
 	mg.addGrid(generateHomogDirichletGrid(16, 16));
+	mg.addGrid(generateHomogDirichletGrid(8, 8));
 	mg.buildMatrices();
 	clock_t build = std::clock();
 	cout << (build - start) / ((double)CLOCKS_PER_SEC) << endl;
-	int k = filler();
-	for (int i = 0; i < 30; i++) {
+	for (int i = 0; i < 20; i++) {
 		mg.vCycle();
 	}
 	cout << (std::clock() - build) / ((double)CLOCKS_PER_SEC) << endl;
+	
 }

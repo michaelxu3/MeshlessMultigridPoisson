@@ -47,19 +47,49 @@ void Multigrid::buildMatrices() {
 }
 void Multigrid::vCycle() {
 	//Restriction
-	Eigen::VectorXd  u_old = *(grids_[grids_.size() - 1].second->values_);
-	for (size_t i = grids_.size() - 1; i > 0;  i--) {
-		grids_[i].second->sor();
-		*(grids_[i-1].second->values_) = (*(restrictionMatrices_[i])) * (*(grids_[i].second->values_));
-	}
-	//prolongation
-	for (size_t i = 0; i < grids_.size() - 1; i++) {
-		grids_[i].second->sor();
-		*(grids_[i+1].second->values_) = (*(prolongMatrices_[i])) * (*grids_[i].second->values_);
-	}
-	double residual = (*(grids_[grids_.size() - 1].second->values_) - u_old).norm()/grids_[grids_.size() - 1].first;
+	//Eigen::VectorXd  u_old = *(grids_[grids_.size() - 1].second->values_);
+	
+
+	Grid* currGrid;
+	/*
+	Grid* coarsegrid = grids_[0].second;
+	Grid* finegrid = grids_[1].second;
+	finegrid->boundaryOp("fine");
+	finegrid->sor(finegrid->laplaceMat_, finegrid->values_, &finegrid->source_);
+	coarsegrid->source_ = *restrictionMatrices_[1] * finegrid->residual();
+	//std::cout << finegrid->residual().norm() << std::endl;
+	coarsegrid-> boundaryOp("coarse");
+	coarsegrid->values_->setZero();
+	coarsegrid->sor(coarsegrid->laplaceMat_, coarsegrid->values_, &coarsegrid->source_);
+	*(finegrid->values_) += (*prolongMatrices_[0]) * (*coarsegrid->values_);
+	*/
+	currGrid = grids_[grids_.size() - 1].second;
+	double residual = currGrid->residual().lpNorm<1>() / currGrid->source_.lpNorm<1>();
 	std::cout << "Residual: " << residual << std::endl;
 
+	for (size_t i = grids_.size() - 1; i > 0; i--) {
+		currGrid = grids_[i].second;
+		std::string gridType = i == grids_.size() - 1 ? "fine" : "coarse";
+		if (i != grids_.size() - 1) {
+			currGrid->values_->setZero();
+		}
+		currGrid->boundaryOp(gridType);
+		currGrid->sor(currGrid->laplaceMat_, currGrid->values_, &(currGrid->source_));
+		grids_[i - 1].second->source_ = (*(restrictionMatrices_[i])) * currGrid->residual();
+	}
+	//Iterate on coarsest grid
+	currGrid = grids_[0].second;
+	currGrid->sor(currGrid->laplaceMat_, currGrid->values_, &(currGrid->source_));
+	//correction and prolongation
+	
+	for (size_t i = 1; i < grids_.size(); i++) {
+		currGrid = grids_[i].second;
+		//correction
+		*currGrid->values_ += (*prolongMatrices_[i-1]) * (*grids_[i-1].second->values_);
+		//smoother
+		currGrid->sor(currGrid->laplaceMat_, currGrid->values_, &(currGrid->source_));
+	}
+	
 }
 void Multigrid::addGrid(Grid* grid) {
 	grids_.push_back(std::pair<int, Grid*>(grid->getSize(), grid));
