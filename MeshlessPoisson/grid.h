@@ -20,9 +20,10 @@ public:
 	void setBCFlag(int boundary, std::string type, vector<double> boundValue);
 	void build_laplacian();
 	void sor(Eigen::SparseMatrix<double, 1>* matrix, Eigen::VectorXd* values, Eigen::VectorXd* rhs);
+	void modifyCoeffNeumann();
 	Eigen::VectorXd residual();
 
-	
+	 
 	vector<int> kNearestNeighbors(std::tuple<double, double, double> point);
 	std::pair<Eigen::MatrixXd, vector<int>> buildCoeffMatrix(std::tuple<double, double, double> point);
 	std::pair<Eigen::VectorXd, vector<int>> pointInterpWeights(std::tuple<double, double, double> point);

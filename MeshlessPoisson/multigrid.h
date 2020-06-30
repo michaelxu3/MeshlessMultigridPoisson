@@ -18,5 +18,6 @@ public:
 	void addGrid(Grid* grid);
 	void buildMatrices();
 	void vCycle();
+	double residual();
 };
 #endif

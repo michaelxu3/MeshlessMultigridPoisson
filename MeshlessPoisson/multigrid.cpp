@@ -1,5 +1,7 @@
 #include "multigrid.h"
 #include <iostream>
+using std::cout;
+using std::endl;
 Multigrid::Multigrid() {
 
 	grids_ = vector<std::pair<int, Grid*>>(); //int = grid size
@@ -15,7 +17,7 @@ Eigen::SparseMatrix<double>* Multigrid::buildInterpMatrix(Grid* baseGrid, Grid* 
 
 	Eigen::SparseMatrix<double>* interpMatrix = new Eigen::SparseMatrix<double>(targetGrid->getSize(), baseGrid->getSize());
 	vector<Eigen::Triplet<double>> tripletList;
-
+	//tripletList: <row, col, value>
 	for (int i = 0; i < targetGrid->getSize(); i++) {
 		std::pair<Eigen::VectorXd, vector<int>> pointWeights = baseGrid->pointInterpWeights(targetGrid->getPoint(i));
 		for (size_t j = 0; j < pointWeights.second.size(); j++) {
@@ -49,27 +51,33 @@ void Multigrid::vCycle() {
 	//Restriction
 	//Eigen::VectorXd  u_old = *(grids_[grids_.size() - 1].second->values_);
 	
-
-	Grid* currGrid;
 	/*
+	Grid* currGrid;
+	currGrid = grids_[grids_.size() - 1].second;
+	double resid_norm = currGrid->residual().lpNorm<1>() / currGrid->source_.lpNorm<1>();
+	std::cout << "Residual: " << resid_norm << std::endl;
 	Grid* coarsegrid = grids_[0].second;
 	Grid* finegrid = grids_[1].second;
 	finegrid->boundaryOp("fine");
 	finegrid->sor(finegrid->laplaceMat_, finegrid->values_, &finegrid->source_);
 	coarsegrid->source_ = *restrictionMatrices_[1] * finegrid->residual();
 	//std::cout << finegrid->residual().norm() << std::endl;
+	cout << grids_[0].second->source_.norm() << endl;
 	coarsegrid-> boundaryOp("coarse");
 	coarsegrid->values_->setZero();
 	coarsegrid->sor(coarsegrid->laplaceMat_, coarsegrid->values_, &coarsegrid->source_);
 	*(finegrid->values_) += (*prolongMatrices_[0]) * (*coarsegrid->values_);
 	*/
+	
+	Grid* currGrid;
 	currGrid = grids_[grids_.size() - 1].second;
-	double residual = currGrid->residual().lpNorm<1>() / currGrid->source_.lpNorm<1>();
-	std::cout << "Residual: " << residual << std::endl;
-
+	double resid_norm = residual();
+	std::cout << "Residual: " << resid_norm << std::endl;
+	//Restriction
 	for (size_t i = grids_.size() - 1; i > 0; i--) {
 		currGrid = grids_[i].second;
 		std::string gridType = i == grids_.size() - 1 ? "fine" : "coarse";
+		//cout << gridType << endl;
 		if (i != grids_.size() - 1) {
 			currGrid->values_->setZero();
 		}
@@ -77,8 +85,11 @@ void Multigrid::vCycle() {
 		currGrid->sor(currGrid->laplaceMat_, currGrid->values_, &(currGrid->source_));
 		grids_[i - 1].second->source_ = (*(restrictionMatrices_[i])) * currGrid->residual();
 	}
+	//cout << grids_[0].second->source_.norm() << endl;
 	//Iterate on coarsest grid
+	currGrid->boundaryOp("coarse");
 	currGrid = grids_[0].second;
+	currGrid->values_->setZero();
 	currGrid->sor(currGrid->laplaceMat_, currGrid->values_, &(currGrid->source_));
 	//correction and prolongation
 	
@@ -90,6 +101,12 @@ void Multigrid::vCycle() {
 		currGrid->sor(currGrid->laplaceMat_, currGrid->values_, &(currGrid->source_));
 	}
 	
+	
+}
+
+double Multigrid::residual() {
+	Grid* finegrid = grids_[grids_.size() - 1].second;
+	return finegrid->residual().lpNorm<1>() / finegrid->source_.lpNorm<1>();
 }
 void Multigrid::addGrid(Grid* grid) {
 	grids_.push_back(std::pair<int, Grid*>(grid->getSize(), grid));

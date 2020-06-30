@@ -4,6 +4,8 @@
 #include <iostream>
 #include <algorithm>
 
+using std::cout;
+using std::endl;
 Grid::Grid(vector<std::tuple<double, double, double>> points, vector<Boundary> boundaries ,
 					GridProperties properties, Eigen::VectorXd source) {
 	int numPoint = (int)(points.size());
@@ -31,7 +33,7 @@ Grid::~Grid() {
 
 double distance(std::tuple<double, double, double> refPoint, std::tuple<double, double, double> queryPoint) {
 	return std::sqrt(std::pow(std::get<0>(refPoint)-std::get<0>(queryPoint),2) + std::pow(std::get<1>(refPoint)-std::get<1>(queryPoint),2) 
-		+ std::pow(std::get<2>(refPoint)*std::get<2>(queryPoint),2));
+		+ std::pow(std::get<2>(refPoint)-std::get<2>(queryPoint),2));
 }
 
 void Grid::setBCFlag(int bNum, std::string type, vector<double> boundValues) {
@@ -52,6 +54,18 @@ void Grid::boundaryOp(std::string coarse) {
 			}
 		}
 		//implement neumann later.
+		if (boundaries_[i].type == 2) {
+			if (coarse.compare("coarse") == 0) {
+				for (int i = 0; i < laplaceMat_->rows(); i++) {
+					for (size_t j = 0; j < (boundaries_[i].bcPoints).size(); j++) {
+						Eigen::VectorXd newCoeff = -(laplaceMat_->col(i))*(*values_);
+					}
+				}
+			}
+			else {
+
+			}
+		}
 	}
 }
 //Builds Sparse Matrix that approximates laplacian operator for SOR from the interpolation weights.
@@ -65,9 +79,11 @@ void Grid::build_laplacian() {
 		}
 	}
 	laplaceMat_->setFromTriplets(tripletList.begin(), tripletList.end());
-	laplaceMat_->makeCompressed();
+	laplaceMat_->makeCompressed();;
 }
 
+void Grid::modifyCoeffNeumann() {
+}
 void Grid::sor(Eigen::SparseMatrix<double, 1>* matrix, Eigen::VectorXd* values, Eigen::VectorXd* rhs) {
 	double x_i, diagCoeff;
 
@@ -205,10 +221,21 @@ std::pair<Eigen::VectorXd, vector<int>> Grid::laplaceWeights (int pointID) {
 	//Build RHS
 	double xEval = std::get<0>(points_[pointID]);
 	double yEval = std::get<1>(points_[pointID]);
+	double yRef, xRef, D;
+	double L = (double)(properties_.rbfExp);
 	for (int i = 0; i < properties_.stencilSize; i++) {
-		double delX = std::get<0>(points_[neighbors[i]]) - xEval;
-		double delY = std::get<1>(points_[neighbors[i]]) - yEval;
-		rhs(i) = properties_.rbfExp * properties_.rbfExp*std::pow(delX*delX + delY * delY, (double)(properties_.rbfExp) / 2.0 - 1);
+		xRef = std::get<0>(points_[neighbors[i]]);
+		yRef = std::get<1>(points_[neighbors[i]]);
+		D = (xEval*xEval - 2 * xEval*xRef + xRef * xRef + yEval * yEval - 2 * yEval*yRef + yRef * yRef);
+		if (D > 0) {
+			rhs(i) = (std::pow(2 * xEval - 2 * xRef, 2) + std::pow(2 * yEval - 2 * yRef, 2))*(L / 2)*(L / 2 - 1)*std::pow(D, L / 2 - 2)
+				+ 2 * L*std::pow(D, L / 2 - 1);
+		}
+		//cout << rhs(i) << endl;
+		
+		//double delX = std::get<0>(points_[neighbors[i]]) - xEval;
+		//double delY = std::get<1>(points_[neighbors[i]]) - yEval;
+		//rhs(i) = properties_.rbfExp * properties_.rbfExp*std::pow(delX*delX + delY * delY, (double)(properties_.rbfExp) / 2.0 - 1);
 	}
 	//poly terms
 	int rowIndex = properties_.stencilSize;
@@ -230,7 +257,7 @@ std::pair<Eigen::VectorXd, vector<int>> Grid::laplaceWeights (int pointID) {
 	return std::pair<Eigen::VectorXd, vector<int>>(weights, neighbors);
 }
 std::pair<Eigen::VectorXd, vector<int>> Grid::pointInterpWeights(std::tuple<double, double, double> point) {
-	int polyTerms = (getPolyDeg() + 1)*(getPolyDeg() + 2);
+	int polyTerms = (getPolyDeg() + 1)*(getPolyDeg() + 2)/2;
 	vector<int> neighbors = kNearestNeighbors(point);
 	int matSize = getStencilSize() + polyTerms;
 	Eigen::MatrixXd coeff_mat = Eigen::MatrixXd::Zero(matSize, matSize);

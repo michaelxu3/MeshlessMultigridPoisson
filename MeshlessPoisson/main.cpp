@@ -1,6 +1,8 @@
 #include "multigrid.h"
 #include <iostream>
 #include <ctime>
+#include <fstream>
+#include <iomanip>
 #define pi 3.141592653589793238462643383279
 using std::cout;
 using std::endl;
@@ -35,7 +37,8 @@ Grid* generateHomogDirichletGrid(int nx, int ny) {
 	props.rbfExp = 3;
 	props.iters = 7;
 	props.polyDeg = 5;
-	props.stencilSize = 46;
+	// cloud size
+	props.stencilSize = (int)(0.75*(props.polyDeg + 1) * (props.polyDeg + 2));
 	props.omega = 1.5;
 	Grid* grid = new Grid(points, bcs, props, source);
 	vector<double> bcValues = vector<double>(4*(nx-1), 0.0);
@@ -43,17 +46,29 @@ Grid* generateHomogDirichletGrid(int nx, int ny) {
 	grid->build_laplacian();
 	return grid;
 }
-
+int writeRes(vector<double> res)
+{
+	std::ofstream file;
+	file.open("residual.txt");
+	//f << fixed << setprecision(2) << endl;
+	for (size_t i = 0; i < res.size(); i++) {
+		file << res[i] << "\n";
+	}
+	file.close();
+	return 0;
+}
  int main() {
+	 /*
 	//100x100 sor now runs in 51 ms.
-	/*
-	Grid* testGrid = generateHomogDirichletGrid(50, 50);
+	
+	Grid* testGrid = generateHomogDirichletGrid(63, 63);
+	vector<double> res;
 	testGrid->boundaryOp("fine");
 	for (int i = 0; i < 1000; i++) {
 		testGrid->sor(testGrid->laplaceMat_, testGrid->values_, &testGrid->source_);
-		cout << testGrid->residual().norm() / testGrid->source_.norm() << endl;
+		res.push_back(testGrid->residual().norm() / testGrid->source_.norm());
 	}
-	
+	writeRes(res);
 	*/
 	
 	Multigrid mg = Multigrid();
@@ -62,16 +77,19 @@ Grid* generateHomogDirichletGrid(int nx, int ny) {
 	//mg.addGrid(generateHomogDirichletGrid(500, 500));
 	//mg.addGrid(generateHomogDirichletGrid(250, 250));
 	//mg.addGrid(generateHomogDirichletGrid(125, 125));
-	mg.addGrid(generateHomogDirichletGrid(63, 63));
-	mg.addGrid(generateHomogDirichletGrid(32, 32));
-	mg.addGrid(generateHomogDirichletGrid(16, 16));
-	mg.addGrid(generateHomogDirichletGrid(8, 8));
+	mg.addGrid(generateHomogDirichletGrid(100,100));
+	mg.addGrid(generateHomogDirichletGrid(50, 50));
+	mg.addGrid(generateHomogDirichletGrid(25, 25));
+	mg.addGrid(generateHomogDirichletGrid(13, 13));
 	mg.buildMatrices();
 	clock_t build = std::clock();
 	cout << (build - start) / ((double)CLOCKS_PER_SEC) << endl;
-	for (int i = 0; i < 20; i++) {
+	vector<double> res;
+	for (int i = 0; i < 30; i++) {
+		res.push_back(mg.residual());
 		mg.vCycle();
 	}
+	writeRes(res);
 	cout << (std::clock() - build) / ((double)CLOCKS_PER_SEC) << endl;
-	
+
 }

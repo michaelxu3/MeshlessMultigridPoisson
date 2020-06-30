@@ -46,3 +46,5 @@ comp_exec_UQ.sh
 *.subdomain
 *.00000
 *.ptsconn
+/MeshlessPoisson/MeshlessMultigridPoisson/matplotlibcpp.h
+/MeshlessPoisson/MeshlessMultigridPoisson/resplot.py
