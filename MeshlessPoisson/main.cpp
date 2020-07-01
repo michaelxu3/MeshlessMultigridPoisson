@@ -1,4 +1,6 @@
+#pragma once
 #include "multigrid.h"
+#include "fileReadingFunctions.h"
 #include <iostream>
 #include <ctime>
 #include <fstream>
@@ -9,28 +11,28 @@ using std::endl;
 
 Grid* generateHomogDirichletGrid(int nx, int ny) {
 	std::vector<std::tuple<double, double, double>> points;
-	vector<std::tuple<vector<int>, int, vector<double>>> boundaries;
-	boundaries.resize(1);
-	std::tuple<vector<int>, int, vector<double>> & bound = boundaries[0];
-	vector<double> actualSoln_homog;
-	vector<double> actualSoln_inhomog;
+	vector<int> bPts;
+	vector<double> bValues;
 	Eigen::VectorXd source = Eigen::VectorXd(nx*ny);
+	double x, y;
 	int pointIndex = 0;
 	for (int i = 0; i < nx; i++) {
 		for (int j = 0; j < ny; j++) {
-			points.push_back(std::tuple<double, double, double>(i*1.0/(nx-1), j*1.0/(ny-1), 0));
-			if (i == nx-1 || i == 0 || j == 0 || j == ny-1) {
-				std::get<0>(bound).push_back(pointIndex);
+			x = i * 1.0 / (nx - 1);
+			y = j * 1.0 / (ny - 1);
+			points.push_back(std::tuple<double, double, double>(x, y, 0));
+			if (x == 0 || x == 1 || y == 0 || y == 1) {
+				bPts.push_back(pointIndex);
+				bValues.push_back(0.0);
 			}
-			source(pointIndex) = -2 * pi*pi*std::sin(pi*i / (double)(nx-1))*std::sin(pi*j / (double)(ny-1));
-			actualSoln_homog.push_back(std::sin(pi*i / (double)(nx-1))*std::sin(pi*j / (double)(ny-1)));
+			source(pointIndex) = -2 * pi*pi*std::sin(pi*x)*std::sin(pi*y);
 			pointIndex++;
 		}
 	}
 	Boundary boundary;
-	boundary.bcPoints = std::get<0>(boundaries[0]);
-	boundary.type = std::get<1>(boundaries[0]);
-	boundary.values = std::get<2>(boundaries[0]);
+	boundary.bcPoints = bPts;
+	boundary.type = 1;
+	boundary.values = bValues;
 	vector<Boundary> bcs;
 	bcs.push_back(boundary);
 	GridProperties props;
@@ -38,14 +40,14 @@ Grid* generateHomogDirichletGrid(int nx, int ny) {
 	props.iters = 7;
 	props.polyDeg = 5;
 	// cloud size
-	props.stencilSize = (int)(0.75*(props.polyDeg + 1) * (props.polyDeg + 2));
+	props.stencilSize = (int)(1.25*(props.polyDeg + 1) * (props.polyDeg + 2));
 	props.omega = 1.5;
-	Grid* grid = new Grid(points, bcs, props, source);
-	vector<double> bcValues = vector<double>(4*(nx-1), 0.0);
-	grid->setBCFlag(0, std::string("dirichlet"), bcValues);
+	Grid* grid = new Grid(points, bcs, props, source);;
+	grid->setBCFlag(0, std::string("dirichlet"), bValues);
 	grid->build_laplacian();
 	return grid;
 }
+
 int writeRes(vector<double> res)
 {
 	std::ofstream file;
@@ -57,27 +59,27 @@ int writeRes(vector<double> res)
 	file.close();
 	return 0;
 }
- int main() {
-	 /*
-	//100x100 sor now runs in 51 ms.
-	
-	Grid* testGrid = generateHomogDirichletGrid(63, 63);
+ void testCartesianGrid() {
+	 
+	//10
+	Grid* testGrid = generateHomogDirichletGrid(41, 41);
 	vector<double> res;
 	testGrid->boundaryOp("fine");
 	for (int i = 0; i < 1000; i++) {
 		testGrid->sor(testGrid->laplaceMat_, testGrid->values_, &testGrid->source_);
 		res.push_back(testGrid->residual().norm() / testGrid->source_.norm());
+		cout << "residual: " << testGrid->residual().norm() / testGrid->source_.norm() << endl;
 	}
-	writeRes(res);
-	*/
+	//writeRes(res);
 	
+	/*
 	Multigrid mg = Multigrid();
 	clock_t start = std::clock();
 	//mg.addGrid(generateHomogDirichletGrid(1000, 1000));
 	//mg.addGrid(generateHomogDirichletGrid(500, 500));
 	//mg.addGrid(generateHomogDirichletGrid(250, 250));
 	//mg.addGrid(generateHomogDirichletGrid(125, 125));
-	mg.addGrid(generateHomogDirichletGrid(100,100));
+	//mg.addGrid(generateHomogDirichletGrid(100,100));
 	mg.addGrid(generateHomogDirichletGrid(50, 50));
 	mg.addGrid(generateHomogDirichletGrid(25, 25));
 	mg.addGrid(generateHomogDirichletGrid(13, 13));
@@ -91,5 +93,60 @@ int writeRes(vector<double> res)
 	}
 	writeRes(res);
 	cout << (std::clock() - build) / ((double)CLOCKS_PER_SEC) << endl;
-
+	*/
 }
+ Grid* genGmshGrid(const char* filename) {
+	 vector<std::tuple<double, double, double>> points = pointsFromMshFile(filename);
+	 double x, y;
+	 vector<int> bPts;
+	 vector<double> bValues;
+
+	 Eigen::VectorXd source(points.size());
+	 for (size_t i = 0; i < points.size(); i++) {
+		 x = std::get<0>(points[i]);
+		 y = std::get<1>(points[i]);
+		 source(i) = -2 * pi*pi*std::sin(pi*x)*std::sin(pi*y);
+		 if (x == 0 || x == 1 || y == 0 || y == 1) {
+			 bPts.push_back(i);
+			 bValues.push_back(0.0);
+		 }
+	 }
+	 Boundary boundary;
+	 boundary.bcPoints = bPts;
+	 boundary.type = 1;
+	 boundary.values = bValues;
+	 vector<Boundary> bcs;
+	 bcs.push_back(boundary);
+	 GridProperties props;
+	 props.rbfExp = 3;
+	 props.iters = 7;
+	 props.polyDeg = 5;
+	 // cloud size
+	 props.stencilSize = (int)(1.25*(props.polyDeg + 1) * (props.polyDeg + 2));
+	 props.omega = 1;
+	 Grid* grid = new Grid(points, bcs, props, source);;
+	 grid->setBCFlag(0, std::string("dirichlet"), bValues);
+	 grid->build_laplacian();
+	// cout << bPts.size() << endl;
+	 return grid;
+ }
+ void testGmshGrid() {
+	 Grid* testGrid = genGmshGrid("square.msh");
+	 vector<double> res;
+	 testGrid->boundaryOp("fine");
+	 //testGrid->modifyCoeffDirichlet();
+	 for (int i = 0; i < 1000; i++) {
+		 cout << "residual: " << testGrid->residual().norm() / testGrid->source_.norm() << endl;
+		 //testGrid->directSolve();
+		 testGrid->sor(testGrid->laplaceMat_, testGrid->values_, &testGrid->source_);
+
+		 res.push_back(testGrid->residual().norm() / testGrid->source_.norm());
+	 }
+	 cout << testGrid->values_->maxCoeff() << endl;
+	 cout << testGrid->values_->minCoeff() << endl;
+
+ }
+ int main() {
+	 testGmshGrid();
+	 return 0;
+ }

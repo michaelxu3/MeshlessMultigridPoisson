@@ -1,12 +1,8 @@
 #pragma once
-#include <vector>
-#include <tuple>
-#include <stdio.h>
-#include "gridclasses.hpp"
+#include "fileReadingFunctions.h"
 
 //stolen from Shantanu's code
 std::vector<std::tuple<double, double, double>> pointsFromMshFile(const char* fname) {
-	double xCoord, yCoord, zCoord;
 	std::vector<std::tuple<double, double, double>> points;
 	FILE *file;
 	int itemp, nv;

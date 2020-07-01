@@ -1,5 +1,6 @@
 #include "multigrid.h"
 #include <iostream>
+#include <iomanip>
 using std::cout;
 using std::endl;
 Multigrid::Multigrid() {
@@ -72,7 +73,7 @@ void Multigrid::vCycle() {
 	Grid* currGrid;
 	currGrid = grids_[grids_.size() - 1].second;
 	double resid_norm = residual();
-	std::cout << "Residual: " << resid_norm << std::endl;
+	std::cout << std::setprecision(12) << "Residual: " << resid_norm << std::endl;
 	//Restriction
 	for (size_t i = grids_.size() - 1; i > 0; i--) {
 		currGrid = grids_[i].second;
