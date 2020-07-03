@@ -48,3 +48,4 @@ comp_exec_UQ.sh
 *.ptsconn
 /MeshlessPoisson/MeshlessMultigridPoisson/matplotlibcpp.h
 /MeshlessPoisson/MeshlessMultigridPoisson/resplot.py
+*.py

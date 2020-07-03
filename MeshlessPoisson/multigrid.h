@@ -2,7 +2,7 @@
 #define MULTIGRID_H
 #include "grid.h"
 class Multigrid {
-private:
+public:
 	vector<std::pair<int, Grid*>> grids_;
 	vector<int> sorGridIters_;
 	vector<Eigen::SparseMatrix<double>*> restrictionMatrices_;
@@ -12,7 +12,6 @@ private:
 	void buildRestrictionMatrices();
 	void buildProlongMatrices();
 
-public:
 	Multigrid();
 	~Multigrid();
 	void addGrid(Grid* grid);

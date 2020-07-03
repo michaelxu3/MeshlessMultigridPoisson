@@ -59,8 +59,8 @@ int writeRes(vector<double> res)
 	file.close();
 	return 0;
 }
- void testCartesianGrid() {
-	 
+void testCartesianSingleGrid() {
+
 	//10
 	Grid* testGrid = generateHomogDirichletGrid(41, 41);
 	vector<double> res;
@@ -70,16 +70,17 @@ int writeRes(vector<double> res)
 		res.push_back(testGrid->residual().norm() / testGrid->source_.norm());
 		cout << "residual: " << testGrid->residual().norm() / testGrid->source_.norm() << endl;
 	}
-	//writeRes(res);
+	writeRes(res);
+}
+void testCartesianMultigrid(){
 	
-	/*
 	Multigrid mg = Multigrid();
 	clock_t start = std::clock();
 	//mg.addGrid(generateHomogDirichletGrid(1000, 1000));
 	//mg.addGrid(generateHomogDirichletGrid(500, 500));
 	//mg.addGrid(generateHomogDirichletGrid(250, 250));
 	//mg.addGrid(generateHomogDirichletGrid(125, 125));
-	//mg.addGrid(generateHomogDirichletGrid(100,100));
+	mg.addGrid(generateHomogDirichletGrid(100,100));
 	mg.addGrid(generateHomogDirichletGrid(50, 50));
 	mg.addGrid(generateHomogDirichletGrid(25, 25));
 	mg.addGrid(generateHomogDirichletGrid(13, 13));
@@ -93,60 +94,147 @@ int writeRes(vector<double> res)
 	}
 	writeRes(res);
 	cout << (std::clock() - build) / ((double)CLOCKS_PER_SEC) << endl;
-	*/
+	
 }
- Grid* genGmshGrid(const char* filename) {
-	 vector<std::tuple<double, double, double>> points = pointsFromMshFile(filename);
-	 double x, y;
-	 vector<int> bPts;
-	 vector<double> bValues;
+Grid* genGmshGrid(const char* filename, double polydeg) {
+	vector<std::tuple<double, double, double>> points = pointsFromMshFile(filename);
+	double x, y;
+	vector<int> bPts;
+	vector<double> bValues;
 
-	 Eigen::VectorXd source(points.size());
-	 for (size_t i = 0; i < points.size(); i++) {
-		 x = std::get<0>(points[i]);
-		 y = std::get<1>(points[i]);
-		 source(i) = -2 * pi*pi*std::sin(pi*x)*std::sin(pi*y);
-		 if (x == 0 || x == 1 || y == 0 || y == 1) {
-			 bPts.push_back(i);
-			 bValues.push_back(0.0);
-		 }
-	 }
-	 Boundary boundary;
-	 boundary.bcPoints = bPts;
-	 boundary.type = 1;
-	 boundary.values = bValues;
-	 vector<Boundary> bcs;
-	 bcs.push_back(boundary);
-	 GridProperties props;
-	 props.rbfExp = 3;
-	 props.iters = 7;
-	 props.polyDeg = 5;
-	 // cloud size
-	 props.stencilSize = (int)(1.25*(props.polyDeg + 1) * (props.polyDeg + 2));
-	 props.omega = 1;
-	 Grid* grid = new Grid(points, bcs, props, source);;
-	 grid->setBCFlag(0, std::string("dirichlet"), bValues);
-	 grid->build_laplacian();
+	Eigen::VectorXd source(points.size());
+	for (size_t i = 0; i < points.size(); i++) {
+		x = std::get<0>(points[i]);
+		y = std::get<1>(points[i]);
+		source(i) = -2 * pi*pi*std::sin(pi*x)*std::sin(pi*y);
+		if (x == 0 || x == 1 || y == 0 || y == 1) {
+			bPts.push_back(i);
+			bValues.push_back(0.0);
+		}
+	}
+	cout << points.size() << endl;
+	Boundary boundary;
+	boundary.bcPoints = bPts;
+	boundary.type = 1;
+	boundary.values = bValues;
+	vector<Boundary> bcs;
+	bcs.push_back(boundary);
+	GridProperties props;
+	props.rbfExp = 3;
+	props.iters = 7;
+	props.polyDeg = polydeg;
+	// cloud size
+	props.stencilSize = (int)(1.25*(props.polyDeg + 1) * (props.polyDeg + 2));
+	props.omega = 0.4;
+	Grid* grid = new Grid(points, bcs, props, source);;
+	grid->setBCFlag(0, std::string("dirichlet"), bValues);
+	grid->build_laplacian();
 	// cout << bPts.size() << endl;
-	 return grid;
- }
- void testGmshGrid() {
-	 Grid* testGrid = genGmshGrid("square.msh");
-	 vector<double> res;
-	 testGrid->boundaryOp("fine");
-	 //testGrid->modifyCoeffDirichlet();
-	 for (int i = 0; i < 1000; i++) {
-		 cout << "residual: " << testGrid->residual().norm() / testGrid->source_.norm() << endl;
-		 //testGrid->directSolve();
-		 testGrid->sor(testGrid->laplaceMat_, testGrid->values_, &testGrid->source_);
+	return grid;
+}
+Grid* genGmshGridTxt(const char* filename, double polydeg) {
+	vector<std::tuple<double, double, double>> points = pointsFromTxts(filename);
+	double x, y;
+	vector<int> bPts;
+	vector<double> bValues;
 
-		 res.push_back(testGrid->residual().norm() / testGrid->source_.norm());
-	 }
-	 cout << testGrid->values_->maxCoeff() << endl;
-	 cout << testGrid->values_->minCoeff() << endl;
+	Eigen::VectorXd source(points.size());
+	for (size_t i = 0; i < points.size(); i++) {
+		x = std::get<0>(points[i]);
+		y = std::get<1>(points[i]);
+		source(i) = -2 * pi*pi*std::sin(pi*x)*std::sin(pi*y);
+		if (x == 0 || x == 1 || y == 0 || y == 1) {
+			bPts.push_back(i);
+			bValues.push_back(0.0);
+		}
+	}
+	cout << points.size() << endl;
+	Boundary boundary;
+	boundary.bcPoints = bPts;
+	boundary.type = 1;
+	boundary.values = bValues;
+	vector<Boundary> bcs;
+	bcs.push_back(boundary);
+	GridProperties props;
+	props.rbfExp = 3;
+	props.iters = 5;
+	props.polyDeg = polydeg;
+	// cloud size
+	props.stencilSize = (int)(1.25*(props.polyDeg + 1) * (props.polyDeg + 2));
+	props.omega = 1.4;
+	Grid* grid = new Grid(points, bcs, props, source);;
+	grid->setBCFlag(0, std::string("dirichlet"), bValues);
+	grid->build_laplacian();
+	// cout << bPts.size() << endl;
+	return grid;
+}
+double calc_l1_error(Grid* grid) {
+	vector<Point> points = grid->points_;
+	Eigen::VectorXd actual(points.size());
+	double x, y;
+	for (size_t i = 0; i < points.size(); i++) {
+		x = std::get<0>(points[i]);
+		y = std::get<1>(points[i]);
+		actual(i) = std::sin(pi*x)*std::sin(pi*y);
+	}
+	return (*grid->values_ - actual).lpNorm<1>()/grid->laplaceMatSize_;
+}
+void testGmshSingleGrid() {
+	Grid* testGrid = genGmshGrid("square9.6k.msh", 5);
 
- }
- int main() {
-	 testGmshGrid();
-	 return 0;
- }
+	vector<double> res;
+	testGrid->boundaryOp("fine");
+	vector<Point> points = testGrid->points_;
+	Eigen::VectorXd actual(points.size());
+	/*
+	double x, y;
+	for (size_t i = 0; i < points.size(); i++) {
+		x = std::get<0>(points[i]);
+		y = std::get<1>(points[i]);
+		actual(i) = std::sin(pi*x)*std::sin(pi*y);
+	}
+	*testGrid->values_ = actual;
+	double l1_error = 0;
+	for (size_t i = 0; i < points.size(); i++) {
+		l1_error += std::abs(actual(i) - testGrid->values_->coeff(i)) / points.size();
+	}
+	cout << "l1 error: " << l1_error << endl;
+	cout << "residual: " << testGrid->residual().norm() / testGrid->source_.norm() << endl;
+	*/
+	for (int i = 0; i < 10000; i++) {
+		cout << "residual: " << testGrid->residual().lpNorm<1>() / testGrid->laplaceMatSize_<< endl;
+		res.push_back(testGrid->residual().lpNorm<1>() / testGrid->laplaceMatSize_);
+
+		//testGrid->directSolve();
+		testGrid->sor(testGrid->laplaceMat_, testGrid->values_, &testGrid->source_);
+	}
+	writeRes(res);
+	cout << testGrid->values_->maxCoeff() << endl;
+	cout << testGrid->values_->minCoeff() << endl;
+	cout << calc_l1_error(testGrid) << endl;
+}
+void testGmshMultigrid() {
+	Multigrid mg;
+	mg.addGrid(genGmshGrid("square9.6k.msh", 5));
+	//mg.addGrid(genGmshGrid("square4.6k.msh"));
+	mg.addGrid(genGmshGrid("square2.7k.msh", 3));
+	//mg.addGrid(genGmshGrid("square1.2k.msh"));
+	mg.addGrid(genGmshGrid("square600.msh", 3));
+	mg.addGrid(genGmshGrid("square160.msh", 3));
+
+	mg.buildMatrices();
+
+	vector<double> res;
+	for (int i = 0; i < 200; i++) {
+		res.push_back(mg.residual());
+		mg.vCycle();
+	}
+	writeRes(res);
+	cout << calc_l1_error(mg.grids_[mg.grids_.size()-1].second) << endl;
+
+}
+int main() {
+	testGmshMultigrid();
+	
+	return 0;
+}

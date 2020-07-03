@@ -92,6 +92,8 @@ void Multigrid::vCycle() {
 	currGrid = grids_[0].second;
 	currGrid->values_->setZero();
 	currGrid->sor(currGrid->laplaceMat_, currGrid->values_, &(currGrid->source_));
+	currGrid->sor(currGrid->laplaceMat_, currGrid->values_, &(currGrid->source_));
+
 	//correction and prolongation
 	
 	for (size_t i = 1; i < grids_.size(); i++) {

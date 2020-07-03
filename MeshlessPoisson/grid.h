@@ -29,14 +29,18 @@ public:
 
 	 
 	vector<int> kNearestNeighbors(Point point);
+	vector <int> kNearestNeighbors(int pointNumber);
 	std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>> buildCoeffMatrix(Point point);
 	std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>> buildCoeffMatrix(int pointNum);
+	std::pair<Eigen::VectorXd, vector<int>> laplaceWeights(int pointID);
 	std::pair<Eigen::VectorXd, vector<int>> pointInterpWeights(std::tuple<double, double, double> point);
 	
 	int getSize();
 	int getStencilSize();
 	int getPolyDeg();
 	std::tuple<double, double, double> getPoint(int index);
+
+
 	vector<std::tuple<double, double, double>> points_;
 	vector<Boundary> boundaries_;
 	GridProperties properties_;
@@ -44,7 +48,6 @@ public:
 	Eigen::SparseMatrix<double, Eigen::RowMajor>* laplaceMat_;
 	vector<int> bcFlags_;
 	void boundaryOp(std::string coarse);
-	vector <int> kNearestNeighbors(int pointNumber);
-	std::pair<Eigen::VectorXd, vector<int>> laplaceWeights(int pointID);
+	vector<double> cond_rbf;
 };
 #endif

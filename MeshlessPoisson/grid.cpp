@@ -14,7 +14,8 @@ Grid::Grid(vector<Point> points, vector<Boundary> boundaries ,
 	bcFlags_ = std::vector<int>(numPoint);
 	properties_ = properties;
 	source_ = source;
-
+	cond_rbf = vector<double>();
+	cond_rbf = vector<double>();
 
 
 	laplaceMatSize_ = (int)(points.size());
@@ -68,13 +69,16 @@ void Grid::boundaryOp(std::string coarse) {
 		}
 	}
 }
-
+//this is terrible and inefficient, fix this.
 void Grid::modifyCoeffDirichlet() {
-	for (int i = 0; i < laplaceMatSize_; i++) {
-		if (bcFlags_[i] == 0) {
-			for (int j = 0; j < laplaceMatSize_; j++) {
-				if (bcFlags_[j] == 1) {
-					laplaceMat_->coeffRef(i, j) = 0;
+	for (int r = 0; r < laplaceMatSize_; r++) {
+		if (bcFlags_[r] == 0) {
+			for (size_t i = 0; i < boundaries_.size(); i++) {
+				//dirichlet
+				if ((boundaries_[i]).type == 1) {
+					for (size_t j = 0; j < boundaries_[i].bcPoints.size(); j++) {
+						laplaceMat_->coeffRef(r, boundaries_[i].bcPoints[j]) = 0;
+					}
 				}
 			}
 		}
@@ -104,6 +108,7 @@ void Grid::sor(Eigen::SparseMatrix<double, Eigen::RowMajor>* matrix, Eigen::Vect
 			}
 			x_i = 0;
 			diagCoeff = 0;
+			//diagCoeff = laplaceMat_->coeff(i, i);
 			rowStartIdx = outerValues[outerIdx];
 			rowEndIdx = outerValues[outerIdx + 1];
 			//sum coeffs*x_i_old on the row i
@@ -112,7 +117,7 @@ void Grid::sor(Eigen::SparseMatrix<double, Eigen::RowMajor>* matrix, Eigen::Vect
 					diagCoeff = laplaceValues[j];
 					continue;
 				}
-
+				
 				inner = innerValues[j];
 				x_i -= laplaceValues[j] * values->coeff(inner);
 			}
@@ -121,6 +126,7 @@ void Grid::sor(Eigen::SparseMatrix<double, Eigen::RowMajor>* matrix, Eigen::Vect
 			//source - ap phi_nb
 			x_i += rhs->coeff(i);
 			x_i *= properties_.omega / diagCoeff;
+			//x_i *= properties_.omega / 1.0;
 			x_i += (1 - properties_.omega)*values->coeff(i);
 			values->coeffRef(i) = x_i;
 			outerIdx++;
@@ -128,14 +134,25 @@ void Grid::sor(Eigen::SparseMatrix<double, Eigen::RowMajor>* matrix, Eigen::Vect
 	}
 }
 void Grid::directSolve() {
+	
 	modifyCoeffDirichlet();
 	Eigen::SparseLU<Eigen::SparseMatrix<double, Eigen::RowMajor>> solver;
 	solver.analyzePattern(*laplaceMat_);
 	solver.factorize(*laplaceMat_);
 	*values_ = solver.solve(source_);
+	
 }
 Eigen::VectorXd Grid::residual() { 
-	return source_ - (*laplaceMat_) * (*values_);
+	Eigen::VectorXd res = source_ - (*laplaceMat_) * (*values_);
+	for (size_t i = 0; i < boundaries_.size(); i++) {
+		//dirichlet
+		if ((boundaries_[i]).type == 1) {
+			for (size_t j = 0; j < (boundaries_[i].bcPoints).size(); j++) {
+				res(boundaries_[i].bcPoints.at(j)) = 0;
+			}
+		}
+	}
+	return res;
 }
 //Fix distance function if we want to extend code to 3D. Makes and sorts a distance array with int point IDs. Brute force, so O(n log n) time
 vector<int> Grid::kNearestNeighbors(int pointID) {
@@ -209,7 +226,11 @@ std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>> Grid::buildCoeffMatrix(P
 			}
 		}
 	}
-	 return std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>>(coeff_mat, neighbors, scaledPoints);
+	//cout << coeff_mat << "\n" << endl;
+	//double cond = coeff_mat.lpNorm<2>()*coeff_mat.inverse().lpNorm<2>();
+	//cout << cond << endl;
+	//cond_rbf.push_back(cond);
+	return std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>>(coeff_mat, neighbors, scaledPoints);
 }
 
 std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>> Grid::buildCoeffMatrix(int pointID) {
@@ -223,7 +244,7 @@ std::pair<Eigen::VectorXd, vector<int>> Grid::laplaceWeights(int pointID) {
 	vector<Point> scaledPoints = std::get<2>(coeffs);
 	int polyTerms = (properties_.polyDeg + 1)*(properties_.polyDeg + 2) / 2;
 	Eigen::VectorXd rhs = Eigen::VectorXd::Zero(properties_.stencilSize + polyTerms);
-
+	 
 	//Build RHS. xRef, yRef, xEval, yEval are already shifted and scaled.
 	Point evalPoint = scaledPoints.at(scaledPoints.size() - 1);
 	double xEval = std::get<0>(evalPoint);
@@ -257,10 +278,13 @@ std::pair<Eigen::VectorXd, vector<int>> Grid::laplaceWeights(int pointID) {
 	}
 	//maybe add a condition number check here to use fullpiv or partialpiv
 	Eigen::VectorXd weights = std::get<0>(coeffs).fullPivLu().solve(rhs);
+	//cout << std::get<0>(coeffs) << endl;
+	//cout << rhs << endl;
 	double scale = std::get<0>(scaledPoints[scaledPoints.size() - 2]);
 	for (int i = 0; i < weights.rows(); i++) {
 		weights(i) /= std::pow(scale, 2);
 	}
+	//cout << weights << endl;
 	return std::pair<Eigen::VectorXd, vector<int>>(weights, neighbors);
 }
 //Builds Sparse Matrix that approximates laplacian operator for SOR from the interpolation weights.
@@ -333,41 +357,20 @@ std::vector<Point> Grid::shifting_scaling(vector<int> pointIDs, Point evalPoint)
 	scaledPoints.push_back(Point(x_ss, y_ss, 0));
 	return scaledPoints;
 }
+
 std::pair<Eigen::VectorXd, vector<int>> Grid::pointInterpWeights(std::tuple<double, double, double> point) {
-	int polyTerms = (getPolyDeg() + 1)*(getPolyDeg() + 2)/2;
-	vector<int> neighbors = kNearestNeighbors(point);
-	int matSize = getStencilSize() + polyTerms;
-	Eigen::MatrixXd coeff_mat = Eigen::MatrixXd::Zero(matSize, matSize);
-	//A-matrix
-	double a_coeff;
-	for (int i = 0; i < properties_.stencilSize; i++) {
-		for (int j = i; j < properties_.stencilSize; j++) {
-			double r = distance(points_[neighbors[i]], points_[neighbors[j]]);
-			a_coeff = std::pow(r, properties_.rbfExp);
-			coeff_mat(i, j) = a_coeff;
-			coeff_mat(j, i) = a_coeff;
-		}
-	}
-	//fill P-matrix sections.
-	int colIndex;
-	for (int row = 0; row < properties_.stencilSize; row++) {
-		colIndex = properties_.stencilSize;
-		for (int p = 0; p <= properties_.polyDeg; p++) {
-			for (int q = 0; q <= p; q++) {
-				double x = std::get<0>(points_.at(neighbors[row]));
-				double y = std::get<1>(points_.at(neighbors[row]));
-				coeff_mat(row, colIndex) = std::pow(x, p - q)*std::pow(y, q);
-				coeff_mat(colIndex, row) = std::pow(x, p - q)*std::pow(y, q);
-				colIndex++;
-			}
-		}
-	}
+	std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>> coeffs = buildCoeffMatrix(point);
+	int polyTerms = (properties_.polyDeg + 1)*(properties_.polyDeg + 2) / 2;
 	Eigen::VectorXd rhs = Eigen::VectorXd::Zero(properties_.stencilSize + polyTerms);
-	//Build RHS rbf terms
-	double xEval = std::get<0>(point);
-	double yEval = std::get<1>(point);
+	Eigen::MatrixXd coeff_mat = std::get<0>(coeffs);
+	vector<int> neighbors = std::get<1>(coeffs);
+	vector<Point> scaledPoints = std::get<2>(coeffs);
+	//Build RHS rbf terms	
+	Point evalPoint = scaledPoints.at(scaledPoints.size() - 1);
+	double xEval = std::get<0>(evalPoint);
+	double yEval = std::get<1>(evalPoint);
 	for (int i = 0; i < properties_.stencilSize; i++) {
-		rhs(i) = std::pow(distance(point, points_[neighbors[i]]), properties_.rbfExp);
+		rhs(i) = std::pow(distance(evalPoint, scaledPoints[i]), properties_.rbfExp);
 	}
 	//RHS poly terms
 	int rowIndex = properties_.stencilSize;
@@ -379,6 +382,7 @@ std::pair<Eigen::VectorXd, vector<int>> Grid::pointInterpWeights(std::tuple<doub
 	}
 	//std::cout << "interp condition number: " << coeff_mat.norm() * coeff_mat.inverse().norm() << std::endl;
 	Eigen::VectorXd weights = coeff_mat.fullPivLu().solve(rhs);
+	double scale = std::get<0>(scaledPoints[scaledPoints.size() - 2]);
 	return std::pair<Eigen::VectorXd, vector<int>>(weights, neighbors);
 }
 int Grid::getSize() {
