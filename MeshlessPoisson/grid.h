@@ -23,11 +23,15 @@ public:
 	void sor(Eigen::SparseMatrix<double, 1>* matrix, Eigen::VectorXd* values, Eigen::VectorXd* rhs);
 	void modifyCoeffDirichlet();
 	void directSolve();
+	void fix_vector_bound_coarse (Eigen::VectorXd* vec);
+	void print_bc_values(Eigen::VectorXd vec);
 	std::pair<double, double> minMaxCoord(vector<int> pointIDs, char coord);
 	std::vector<std::tuple<double, double, double>> shifting_scaling(vector<int> pointIDs, Point evalPoint);
 	Eigen::VectorXd residual();
-
-	 
+	void diagonal_scaling(Eigen::SparseMatrix<double, 1>* matrix, Eigen::VectorXd* rhs);
+	void cuthill_mckee_ordering(vector<vector<int>> &adjacency, vector<int> &order);
+	void reverse_cuthill_mckee_ordering(vector<vector<int>> &adjacency, vector<int> &order);
+	void rcm_order_points();
 	vector<int> kNearestNeighbors(Point point);
 	vector <int> kNearestNeighbors(int pointNumber);
 	std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>> buildCoeffMatrix(Point point);
@@ -38,7 +42,7 @@ public:
 	int getSize();
 	int getStencilSize();
 	int getPolyDeg();
-	std::tuple<double, double, double> getPoint(int index);
+
 
 
 	vector<std::tuple<double, double, double>> points_;

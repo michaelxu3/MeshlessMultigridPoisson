@@ -33,8 +33,7 @@ Grid::~Grid() {
 }
 
 double distance(Point refPoint, Point queryPoint) {
-	return std::sqrt(std::pow(std::get<0>(refPoint)-std::get<0>(queryPoint),2) + std::pow(std::get<1>(refPoint)-std::get<1>(queryPoint),2) 
-		+ std::pow(std::get<2>(refPoint)-std::get<2>(queryPoint),2));
+	return std::sqrt(std::pow(std::get<0>(refPoint)-std::get<0>(queryPoint),2) + std::pow(std::get<1>(refPoint)-std::get<1>(queryPoint),2));
 }
 
 void Grid::setBCFlag(int bNum, std::string type, vector<double> boundValues) {
@@ -82,8 +81,13 @@ void Grid::modifyCoeffDirichlet() {
 				}
 			}
 		}
+		if (bcFlags_[r] == 1) {
+			for (int c = 0; c < laplaceMatSize_; c++) {
+				laplaceMat_->coeffRef(r, c) = (r == c) ? 1 : 0;
+			}
+		}
 	 }
-	//laplaceMat_->makeCompressed();
+	laplaceMat_->makeCompressed();
 }
 void Grid::sor(Eigen::SparseMatrix<double, Eigen::RowMajor>* matrix, Eigen::VectorXd* values, Eigen::VectorXd* rhs) {
 	double x_i, diagCoeff;
@@ -144,15 +148,28 @@ void Grid::directSolve() {
 }
 Eigen::VectorXd Grid::residual() { 
 	Eigen::VectorXd res = source_ - (*laplaceMat_) * (*values_);
+	fix_vector_bound_coarse(&res);
+	return res;
+}
+void Grid::print_bc_values(Eigen::VectorXd vec) {
 	for (size_t i = 0; i < boundaries_.size(); i++) {
 		//dirichlet
 		if ((boundaries_[i]).type == 1) {
 			for (size_t j = 0; j < (boundaries_[i].bcPoints).size(); j++) {
-				res(boundaries_[i].bcPoints.at(j)) = 0;
+				cout << "bc value: " << vec.coeff(boundaries_[i].bcPoints.at(j)) << endl;
 			}
 		}
 	}
-	return res;
+}
+void Grid::fix_vector_bound_coarse(Eigen::VectorXd* vec) {
+	for (size_t i = 0; i < boundaries_.size(); i++) {
+		//dirichlet
+		if ((boundaries_[i]).type == 1) {
+			for (size_t j = 0; j < (boundaries_[i].bcPoints).size(); j++) {
+				vec->coeffRef(boundaries_[i].bcPoints.at(j)) = 0;
+			}
+		}
+	}
 }
 //Fix distance function if we want to extend code to 3D. Makes and sorts a distance array with int point IDs. Brute force, so O(n log n) time
 vector<int> Grid::kNearestNeighbors(int pointID) {
@@ -357,6 +374,39 @@ std::vector<Point> Grid::shifting_scaling(vector<int> pointIDs, Point evalPoint)
 	scaledPoints.push_back(Point(x_ss, y_ss, 0));
 	return scaledPoints;
 }
+void Grid::diagonal_scaling(Eigen::SparseMatrix<double, Eigen::RowMajor>* matrix, Eigen::VectorXd* rhs) {
+	double diagCoeff;
+	double* laplaceValues = matrix->valuePtr();
+	//column indices of values
+	const int* innerValues = matrix->innerIndexPtr();
+	//index in values of first nonzero entry of each row, has size of (laplaceMatSize + 1) with last value being the # of nonzeros/end flag.
+	const int* outerValues = matrix->outerIndexPtr();
+	int valueIdx, innerIdx, outerIdx, rowStartIdx, rowEndIdx;
+	int numNonZeros = matrix->nonZeros();
+	int inner;
+	valueIdx = 0;
+	innerIdx = 0;
+	outerIdx = 0;
+
+	for (int i = 0; i < matrix->rows(); i++) {
+		diagCoeff = 0;
+		rowStartIdx = outerValues[outerIdx];
+		rowEndIdx = outerValues[outerIdx + 1];
+		//Search for diagonal on every row
+		for (int j = rowStartIdx; j < rowEndIdx; j++) {
+			if (innerValues[j] == i) {
+				diagCoeff = laplaceValues[j];
+				break;
+			}
+		}
+		for (int j = rowStartIdx; j < rowEndIdx; j++) {
+			laplaceValues[j] /= diagCoeff;
+		}
+		//Modify Source
+		rhs->coeffRef(i) /= diagCoeff;
+		outerIdx++;
+	}
+}
 
 std::pair<Eigen::VectorXd, vector<int>> Grid::pointInterpWeights(std::tuple<double, double, double> point) {
 	std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>> coeffs = buildCoeffMatrix(point);
@@ -370,6 +420,7 @@ std::pair<Eigen::VectorXd, vector<int>> Grid::pointInterpWeights(std::tuple<doub
 	double xEval = std::get<0>(evalPoint);
 	double yEval = std::get<1>(evalPoint);
 	for (int i = 0; i < properties_.stencilSize; i++) {
+		//cout << distance(evalPoint, scaledPoints[i]) << endl;
 		rhs(i) = std::pow(distance(evalPoint, scaledPoints[i]), properties_.rbfExp);
 	}
 	//RHS poly terms
@@ -382,8 +433,120 @@ std::pair<Eigen::VectorXd, vector<int>> Grid::pointInterpWeights(std::tuple<doub
 	}
 	//std::cout << "interp condition number: " << coeff_mat.norm() * coeff_mat.inverse().norm() << std::endl;
 	Eigen::VectorXd weights = coeff_mat.fullPivLu().solve(rhs);
-	double scale = std::get<0>(scaledPoints[scaledPoints.size() - 2]);
+	double sum = 0;
+	for (int i = 0; i < getStencilSize(); i++) {
+		sum += weights.coeff(i);
+	}
 	return std::pair<Eigen::VectorXd, vector<int>>(weights, neighbors);
+}
+
+void Grid::cuthill_mckee_ordering(vector<vector<int>> &adjacency, vector<int> &order) {
+	vector<int> degree, new_numbering;
+	vector<bool> visited_flag;
+	int nv = adjacency.size(), iv_1, iv_2;
+	for (int i = 0; i < nv; i++)
+	{
+		degree.push_back(adjacency[i].size());
+		visited_flag.push_back(false);
+	}
+	new_numbering.clear();
+	int iv_min_degree = 0;
+	int min_degree = degree[0];
+	for (int i = 0; i < nv; i++)
+	{
+		if (min_degree > degree[i])
+		{
+			min_degree = degree[i];
+			iv_min_degree = i;
+		}
+	}
+	new_numbering.push_back(iv_min_degree);
+	visited_flag[iv_min_degree] = true;
+	// cout << "\nreverse_cuthill_mckee_ordering iv_min_degree: " << iv_min_degree << ", min_degree: " << min_degree << "\n\n";
+	vector<std::pair<int, int>> new_set;
+	for (int index = 0; index < nv; index++)
+	{
+		if (new_numbering.size() == nv)
+		{
+			break;
+		}
+		iv_1 = new_numbering[index];
+		// cout << "\nreverse_cuthill_mckee_ordering iv_1: " << iv_1 << ", index: " << index << "\n\n";
+		// print_to_terminal(adjacency[iv_1], "reverse_cuthill_mckee_ordering adjacency[iv_1]");
+		for (int i1 = 0; i1 < adjacency[iv_1].size(); i1++)
+		{
+			iv_2 = adjacency[iv_1][i1];
+			if (!visited_flag[iv_2])
+			{
+				visited_flag[iv_2] = true;
+				new_set.push_back(std::make_pair(degree[iv_2], iv_2));
+			}
+			sort(new_set.begin(), new_set.end());
+		}
+		for (int i1 = 0; i1 < new_set.size(); i1++)
+		{
+			new_numbering.push_back(new_set[i1].second);
+		}
+		// print_to_terminal(new_set, "reverse_cuthill_mckee_ordering new_set");
+		new_set.clear();
+	}
+	visited_flag.clear();
+	degree.clear();
+	for (int iv = 0; iv < nv; iv++)
+	{
+		order.push_back(-1);
+	}
+	for (int iv = 0; iv < nv; iv++)
+	{
+		order[new_numbering[iv]] = iv;
+	}
+	new_numbering.clear();
+}
+void Grid::reverse_cuthill_mckee_ordering(vector<vector<int>> &adjacency, vector<int> &order) {
+	cuthill_mckee_ordering(adjacency, order);
+	int nv = adjacency.size();
+	for (int iv = 0; iv < nv; iv++)
+	{
+		order[iv] = nv - order[iv] - 1;
+	}
+}
+void Grid::rcm_order_points() {
+	vector<vector<int>> adjacency;
+	vector<int> order;
+	for (size_t i = 0; i < points_.size(); i++) {
+		adjacency.push_back(kNearestNeighbors(i));
+	}
+	reverse_cuthill_mckee_ordering(adjacency, order);
+	vector<Point> newPoints = points_;
+	Eigen::VectorXd newSource = source_;
+	vector<int> newBCFlag = bcFlags_;
+	vector<int> oldToRCMPtrs(points_.size());
+
+	for (size_t i = 0; i < points_.size(); i++) {
+		newPoints[i] = points_[order[i]];
+		newBCFlag[i] = bcFlags_[order[i]];
+		newSource(i) = source_.coeff(order[i]);
+		oldToRCMPtrs[order[i]] = i;
+	}
+	points_ = newPoints;
+	source_ = newSource;
+	bcFlags_ = newBCFlag;
+
+	vector<int> newBCPoints;
+	vector<double> newBCVals;
+	
+	for (size_t i = 0; i < boundaries_.size(); i++) {
+		//dirichlet
+		newBCPoints.clear();
+		newBCVals.clear();
+		for(size_t j = 0; j < boundaries_[i].bcPoints.size(); j++){
+			newBCPoints.push_back(oldToRCMPtrs[boundaries_[i].bcPoints.at(j)]);
+			newBCVals.push_back(boundaries_[i].values.at(j));
+		}
+		boundaries_[i].bcPoints = newBCPoints;
+		boundaries_[i].values = newBCVals;
+	}
+	
 }
 int Grid::getSize() {
 	return laplaceMatSize_;
@@ -393,7 +556,4 @@ int Grid::getStencilSize() {
 }
 int Grid::getPolyDeg() {
 	return properties_.polyDeg;
-}
-std::tuple<double, double, double> Grid::getPoint(int index) {
-	return points_[index];
 }

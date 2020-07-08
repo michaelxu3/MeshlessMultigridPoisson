@@ -1,6 +1,6 @@
 #pragma once
 #include "fileReadingFunctions.h"
-
+#include <iostream>
 //stolen from Shantanu's code
 std::vector<std::tuple<double, double, double>> pointsFromMshFile(const char* fname) {
 	std::vector<std::tuple<double, double, double>> points;
@@ -24,6 +24,7 @@ std::vector<std::tuple<double, double, double>> pointsFromMshFile(const char* fn
 		fscanf(file, "%lf ", &xtemp); //x co-ordinate
 		fscanf(file, "%lf ", &ytemp); //y co-ordinate
 		fscanf(file, "%lf ", &ztemp); //z co-ordinate
+		//std::cout << xtemp << " " << ytemp << " " << ztemp << std::endl;
 		points.push_back(std::tuple<double, double, double>(xtemp, ytemp, ztemp));
 	}
 	return points;
