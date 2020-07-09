@@ -7,6 +7,7 @@
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 #include "gridclasses.hpp"
+#include "fileReadingFunctions.h"
 typedef std::tuple<double, double, double> Point;
 using std::vector;
 class Grid {
@@ -53,5 +54,6 @@ public:
 	vector<int> bcFlags_;
 	void boundaryOp(std::string coarse);
 	vector<double> cond_rbf;
+	//Eigen::SparseMatrix<double, Eigen::RowMajor>* adjacencyMat_;
 };
 #endif

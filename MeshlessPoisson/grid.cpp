@@ -3,7 +3,7 @@
 #include "math.h"
 #include <iostream>
 #include <algorithm>
-
+#include <queue>
 using std::cout;
 using std::endl;
 Grid::Grid(vector<Point> points, vector<Boundary> boundaries ,
@@ -441,88 +441,52 @@ std::pair<Eigen::VectorXd, vector<int>> Grid::pointInterpWeights(std::tuple<doub
 }
 
 void Grid::cuthill_mckee_ordering(vector<vector<int>> &adjacency, vector<int> &order) {
-	vector<int> degree, new_numbering;
-	vector<bool> visited_flag;
-	int nv = adjacency.size(), iv_1, iv_2;
-	for (int i = 0; i < nv; i++)
-	{
-		degree.push_back(adjacency[i].size());
-		visited_flag.push_back(false);
-	}
-	new_numbering.clear();
-	int iv_min_degree = 0;
-	int min_degree = degree[0];
-	for (int i = 0; i < nv; i++)
-	{
-		if (min_degree > degree[i])
-		{
-			min_degree = degree[i];
-			iv_min_degree = i;
-		}
-	}
-	new_numbering.push_back(iv_min_degree);
-	visited_flag[iv_min_degree] = true;
-	// cout << "\nreverse_cuthill_mckee_ordering iv_min_degree: " << iv_min_degree << ", min_degree: " << min_degree << "\n\n";
-	vector<std::pair<int, int>> new_set;
-	for (int index = 0; index < nv; index++)
-	{
-		if (new_numbering.size() == nv)
-		{
-			break;
-		}
-		iv_1 = new_numbering[index];
-		// cout << "\nreverse_cuthill_mckee_ordering iv_1: " << iv_1 << ", index: " << index << "\n\n";
-		// print_to_terminal(adjacency[iv_1], "reverse_cuthill_mckee_ordering adjacency[iv_1]");
-		for (int i1 = 0; i1 < adjacency[iv_1].size(); i1++)
-		{
-			iv_2 = adjacency[iv_1][i1];
-			if (!visited_flag[iv_2])
-			{
-				visited_flag[iv_2] = true;
-				new_set.push_back(std::make_pair(degree[iv_2], iv_2));
+	
+	vector<bool> visited(laplaceMatSize_, false);
+	//stores original values
+	std::queue<int> queue;
+	vector<int> new_order;
+	int startPoint = 0;
+	visited[startPoint] = true;
+	queue.push(startPoint);
+	int currPoint, adjPoint;
+	while (!queue.empty()) {
+		currPoint = queue.front();
+		new_order.push_back(currPoint);
+		queue.pop();
+		for (size_t i = 0; i < adjacency[currPoint].size(); i++) {
+			adjPoint = adjacency[currPoint].at(i);
+			if (visited[adjPoint] == false) {
+				visited[adjPoint] = true;
+				queue.push(adjPoint);
 			}
-			sort(new_set.begin(), new_set.end());
 		}
-		for (int i1 = 0; i1 < new_set.size(); i1++)
-		{
-			new_numbering.push_back(new_set[i1].second);
-		}
-		// print_to_terminal(new_set, "reverse_cuthill_mckee_ordering new_set");
-		new_set.clear();
 	}
-	visited_flag.clear();
-	degree.clear();
-	for (int iv = 0; iv < nv; iv++)
-	{
-		order.push_back(-1);
-	}
-	for (int iv = 0; iv < nv; iv++)
-	{
-		order[new_numbering[iv]] = iv;
-	}
-	new_numbering.clear();
+	order = new_order;
+	
 }
 void Grid::reverse_cuthill_mckee_ordering(vector<vector<int>> &adjacency, vector<int> &order) {
 	cuthill_mckee_ordering(adjacency, order);
-	int nv = adjacency.size();
-	for (int iv = 0; iv < nv; iv++)
-	{
-		order[iv] = nv - order[iv] - 1;
-	}
+	std::reverse(order.begin(), order.end());
 }
 void Grid::rcm_order_points() {
 	vector<vector<int>> adjacency;
-	vector<int> order;
+	vector<int> order; // = orderFromTxt("rcm/finer_grid_rcm.txt", laplaceMatSize_);
+	
+	vector<int> neighbors;
 	for (size_t i = 0; i < points_.size(); i++) {
-		adjacency.push_back(kNearestNeighbors(i));
+		neighbors = kNearestNeighbors(points_[i]);
+		adjacency.push_back(neighbors);
 	}
 	reverse_cuthill_mckee_ordering(adjacency, order);
+	
 	vector<Point> newPoints = points_;
 	Eigen::VectorXd newSource = source_;
 	vector<int> newBCFlag = bcFlags_;
 	vector<int> oldToRCMPtrs(points_.size());
 
 	for (size_t i = 0; i < points_.size(); i++) {
+		//cout << order[i] << endl;
 		newPoints[i] = points_[order[i]];
 		newBCFlag[i] = bcFlags_[order[i]];
 		newSource(i) = source_.coeff(order[i]);

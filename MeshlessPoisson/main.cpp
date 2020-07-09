@@ -41,7 +41,7 @@ Grid* generateHomogDirichletGrid(int nx, int ny, int iters) {
 	props.polyDeg = 5;
 	// cloud size
 	props.stencilSize = (int)(1*(props.polyDeg + 1) * (props.polyDeg + 2));
-	props.omega = 1.4;
+	props.omega = 1.3;
 	Grid* grid = new Grid(points, bcs, props, source);;
 	grid->setBCFlag(0, std::string("dirichlet"), bValues);
 	grid->build_laplacian();
@@ -163,15 +163,39 @@ Grid* genGmshGrid(const char* filename, int polydeg, int iters, std::string file
 	return grid;
 }
 void testGmshSingleGrid() {
-	Grid* testGrid = genGmshGrid("gmshtest0/square_11825.msh", 5, 5, "msh");
+	Grid* testGrid = genGmshGrid("finer_mesh.txt", 5, 5, "txt");
 
 	vector<double> res;
 	testGrid->boundaryOp("fine");
-
-	
+	Eigen::SparseMatrix<double, 1> * matrix = testGrid->laplaceMat_;
+	const double* laplaceValues = matrix->valuePtr();
+	//column indices of values
+	const int* innerValues = matrix->innerIndexPtr();
+	//index in values of first nonzero entry of each row, has size of (laplaceMatSize + 1) with last value being the # of nonzeros/end flag.
+	const int* outerValues = matrix->outerIndexPtr();
+	int valueIdx, innerIdx, outerIdx, rowStartIdx, rowEndIdx;
+	int numNonZeros = matrix->nonZeros();
+	int inner;
+	valueIdx = 0;
+	innerIdx = 0;
+	outerIdx = 0;
+	vector<double> iv, jv;
+	for (int i = 0; i < matrix->rows(); i++) {
+		//diagCoeff = laplaceMat_->coeff(i, i);
+		rowStartIdx = outerValues[outerIdx];
+		rowEndIdx = outerValues[outerIdx + 1];
+		//sum coeffs*x_i_old on the row i
+		for (int j = rowStartIdx; j < rowEndIdx; j++) {
+			iv.push_back(i);
+			jv.push_back(innerValues[j]);
+		}
+		outerIdx++;
+	}
+	writeVectorToTxt(iv, "i.txt");
+	writeVectorToTxt(jv, "j.txt");
 	vector<Point> points = testGrid->points_;
 	Eigen::VectorXd actual(points.size());
-
+	/*
 	double x, y;
 	vector<double> xv, yv;
 	for (size_t i = 0; i < points.size(); i++) {
@@ -182,6 +206,7 @@ void testGmshSingleGrid() {
 	}
 	writeVectorToTxt(xv, "x.txt");
 	writeVectorToTxt(yv, "y.txt");
+	*/
 
 	//testGrid->diagonal_scaling(testGrid->laplaceMat_, &testGrid->source_);
 	//cout << "num bc points: " << testGrid->boundaries_[0].bcPoints.size() << endl;
@@ -224,7 +249,7 @@ void testGmshMultigrid() {
 	mg.buildMatrices();
 
 	vector<double> res;
-	for (int i = 0; i < 150; i++) {
+	for (int i = 0; i < 100; i++) {
 		res.push_back(mg.residual());
 		mg.vCycle();
 	}
@@ -234,6 +259,7 @@ void testGmshMultigrid() {
 
 }
 int main() {
+
 	//testGmshSingleGrid();
 	testGmshMultigrid();
 	//testCartesianMultigrid();

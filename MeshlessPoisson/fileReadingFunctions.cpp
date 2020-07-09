@@ -54,3 +54,16 @@ std::vector<std::tuple<double, double, double>> pointsFromTxts(const char* fname
 	}
 	return points;
 }
+std::vector<int> orderFromTxt(const char* fname, int nv) {
+	std::vector<int> order;
+	FILE *file;
+	int itemp;
+	char temp[50];
+	file = fopen(fname, "r");
+	for (int iv = 0; iv < nv; iv++)
+	{
+		fscanf(file, "%i ", &itemp); //x co-ordinate
+		order.push_back(itemp);
+	}
+	return order;
+}
