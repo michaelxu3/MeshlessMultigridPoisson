@@ -4,6 +4,7 @@
 #include <iostream>
 #include <algorithm>
 #include <queue>
+#define pi 3.141592653589793238462643383279
 using std::cout;
 using std::endl;
 Grid::Grid(vector<Point> points, vector<Boundary> boundaries ,
@@ -11,25 +12,24 @@ Grid::Grid(vector<Point> points, vector<Boundary> boundaries ,
 	int numPoint = (int)(points.size());
 	points_ = points;
 	boundaries_ = boundaries;
-	bcFlags_ = std::vector<int>(numPoint);
 	properties_ = properties;
 	source_ = source;
 	cond_rbf = vector<double>();
-	cond_rbf = vector<double>();
+	neumannFlag_ = false;
+	setNeumannFlag();
 
-
-	laplaceMatSize_ = (int)(points.size());
-	values_ = new Eigen::VectorXd(numPoint);
-	values_->setZero();
-	residuals_ = new Eigen::VectorXd(numPoint);
-	residuals_->setZero();
-	laplaceMat_ = new Eigen::SparseMatrix<double, Eigen::RowMajor>(numPoint, numPoint);
+	laplaceMatSize_ = numPoint;
+	int A_size = neumannFlag_ ? numPoint + 1 : numPoint;
+	bcFlags_ = std::vector<int>(numPoint);
+	laplaceMat_ = new Eigen::SparseMatrix<double, Eigen::RowMajor>(A_size, A_size);
 	laplaceMat_->setZero();
+	values_ = new Eigen::VectorXd(A_size);
+	values_->setZero();
+
 }
 Grid::~Grid() {
 	delete values_;
 	delete laplaceMat_;
-	delete residuals_;
 }
 
 double distance(Point refPoint, Point queryPoint) {
@@ -53,41 +53,84 @@ void Grid::boundaryOp(std::string coarse) {
 				(*values_)((boundaries_[i].bcPoints).at(j)) = coarse.compare("coarse") == 0 ? 0 : (boundaries_[i].values).at(j);
 			}
 		}
-		//implement neumann later.
+	}
+}
+void Grid::setNeumannFlag() {
+	for (size_t i = 0; i < boundaries_.size(); i++) {
 		if (boundaries_[i].type == 2) {
-			if (coarse.compare("coarse") == 0) {
-				for (int i = 0; i < laplaceMat_->rows(); i++) {
-					for (size_t j = 0; j < (boundaries_[i].bcPoints).size(); j++) {
-						Eigen::VectorXd newCoeff = -(laplaceMat_->col(i))*(*values_);
-					}
+			neumannFlag_ = true;
+			return;
+		}
+	}
+	neumannFlag_ = false;
+}
+//This is inefficient and just written so I don't have to worry about sparse matrix traversal for now.
+//Fix once single grid converges.
+void Grid::modify_coeff_neumann() {
+	
+	/*
+	vector<int> neighbors;
+	double A_ij, A_jj, A_ik, A_jk;
+	for (int i = 0; i < laplaceMat_->rows() - 1; i++) {
+		if (bcFlags_[i] != 0) {
+			continue;
+		}
+		for (int j = 0; j < laplaceMat_->cols() - 1; j++) {
+			//cout << j << endl;
+			if (bcFlags_[j] == 2) {
+				neighbors = kNearestNeighbors(j, true);
+				A_jj = laplaceMat_->coeff(j, j);
+				A_ij = laplaceMat_->coeff(i, j);
+			
+				for (int k = 0; k < neighbors.size(); k++) {
+					A_ik = laplaceMat_->coeff(i, neighbors[k]);
+					A_jk = laplaceMat_->coeff(j, neighbors[k]);
+					//cout << A_jj << endl;
+					laplaceMat_->coeffRef(i,neighbors[k]) = A_ik - A_ij * A_jk / A_jj;
 				}
-			}
-			else {
-
+				laplaceMat_->coeffRef(i, j) = 0;
 			}
 		}
 	}
-}
-//this is terrible and inefficient, fix this.
-void Grid::modifyCoeffDirichlet() {
-	for (int r = 0; r < laplaceMatSize_; r++) {
-		if (bcFlags_[r] == 0) {
-			for (size_t i = 0; i < boundaries_.size(); i++) {
-				//dirichlet
-				if ((boundaries_[i]).type == 1) {
-					for (size_t j = 0; j < boundaries_[i].bcPoints.size(); j++) {
-						laplaceMat_->coeffRef(r, boundaries_[i].bcPoints[j]) = 0;
-					}
-				}
-			}
+	*/
+	
+	for (int i = 0; i < source_.rows() - 1; i++) {
+		if (bcFlags_[i] == 2) {
+			source_(i) = 0;
 		}
-		if (bcFlags_[r] == 1) {
-			for (int c = 0; c < laplaceMatSize_; c++) {
-				laplaceMat_->coeffRef(r, c) = (r == c) ? 1 : 0;
-			}
-		}
-	 }
+	}
 	laplaceMat_->makeCompressed();
+}
+void Grid::bound_eval_neumann() {
+	const double* laplaceValues = laplaceMat_->valuePtr();
+	//column indices of values
+	const int* innerValues = laplaceMat_->innerIndexPtr();
+	//index in values of first nonzero entry of each row, has size of (laplaceMatSize + 1) with last value being the # of nonzeros/end flag.
+	const int* outerValues = laplaceMat_->outerIndexPtr();
+	int rowStart, rowEnd, curr;
+	double diag, boundValue;
+	for (size_t i = 0; i < boundaries_.size(); i++) {
+		if ((boundaries_[i]).type == 2) {
+			for (size_t j = 0; j < (boundaries_[i].bcPoints).size(); j++) {
+				curr = boundaries_[i].bcPoints[j];
+				rowStart = outerValues[curr];
+				rowEnd = outerValues[curr + 1];
+				boundValue = 0;
+				//cout << "initial boundvalue: " << boundValue << endl;
+				for (int k = rowStart; k < rowEnd; k++) {
+					if (innerValues[k] == curr) {
+						diag = laplaceValues[k];
+						continue;
+					}
+					boundValue -= values_->coeff(innerValues[k]) * laplaceValues[k];
+				}
+				boundValue /= diag;
+				values_->coeffRef(curr) = boundValue;
+				
+			}
+		}
+	}
+	//print_check_bc_normal_derivs();
 }
 void Grid::sor(Eigen::SparseMatrix<double, Eigen::RowMajor>* matrix, Eigen::VectorXd* values, Eigen::VectorXd* rhs) {
 	double x_i, diagCoeff;
@@ -106,7 +149,7 @@ void Grid::sor(Eigen::SparseMatrix<double, Eigen::RowMajor>* matrix, Eigen::Vect
 
 		for (int i = 0; i < matrix->rows(); i++){
 			//dirichlet bc
-			if (bcFlags_[i] == 1) {
+			if (!(neumannFlag_ && i == matrix->rows()-1) && bcFlags_[i] != 0) {
 				outerIdx++;
 				continue;
 			}
@@ -129,17 +172,20 @@ void Grid::sor(Eigen::SparseMatrix<double, Eigen::RowMajor>* matrix, Eigen::Vect
 			//take last residual and restrict
 			//source - ap phi_nb
 			x_i += rhs->coeff(i);
+	
 			x_i *= properties_.omega / diagCoeff;
-			//x_i *= properties_.omega / 1.0;
 			x_i += (1 - properties_.omega)*values->coeff(i);
+			//cout << "diag: " << diagCoeff << " bcflag: " << bcFlags_[i] << endl;
+			//cout << x_i << endl;
 			values->coeffRef(i) = x_i;
 			outerIdx++;
 		}
+		bound_eval_neumann();
 	}
 }
 void Grid::directSolve() {
 	
-	modifyCoeffDirichlet();
+	//modifyCoeffDirichlet();
 	Eigen::SparseLU<Eigen::SparseMatrix<double, Eigen::RowMajor>> solver;
 	solver.analyzePattern(*laplaceMat_);
 	solver.factorize(*laplaceMat_);
@@ -153,12 +199,38 @@ Eigen::VectorXd Grid::residual() {
 }
 void Grid::print_bc_values(Eigen::VectorXd vec) {
 	for (size_t i = 0; i < boundaries_.size(); i++) {
-		//dirichlet
 		if ((boundaries_[i]).type == 1) {
 			for (size_t j = 0; j < (boundaries_[i].bcPoints).size(); j++) {
 				cout << "bc value: " << vec.coeff(boundaries_[i].bcPoints.at(j)) << endl;
 			}
 		}
+	}
+}
+void Grid::print_check_bc_normal_derivs() {
+	double* laplaceValues = laplaceMat_->valuePtr();
+	//column indices of values
+	const int* innerValues = laplaceMat_->innerIndexPtr();
+	//index in values of first nonzero entry of each row, has size of (laplaceMatSize + 1) with last value being the # of nonzeros/end flag.
+	const int* outerValues = laplaceMat_->outerIndexPtr();
+	int valueIdx, innerIdx, outerIdx, rowStartIdx, rowEndIdx;
+	double sum;
+	valueIdx = 0;
+	innerIdx = 0;
+	outerIdx = 0;
+
+	for (int i = 0; i < laplaceMat_->rows() - 1; i++) {
+		if (bcFlags_[i] != 2) {
+			outerIdx++;
+			continue;
+		}
+		sum = 0;
+		rowStartIdx = outerValues[outerIdx];
+		rowEndIdx = outerValues[outerIdx + 1];
+		for (int j = rowStartIdx; j < rowEndIdx; j++) {
+			sum += laplaceValues[j] * values_->coeff(innerValues[j]);
+		}
+		cout << "d/dn: " << sum << " rhs: " << source_.coeff(i) << endl;
+		outerIdx++;
 	}
 }
 void Grid::fix_vector_bound_coarse(Eigen::VectorXd* vec) {
@@ -172,27 +244,42 @@ void Grid::fix_vector_bound_coarse(Eigen::VectorXd* vec) {
 	}
 }
 //Fix distance function if we want to extend code to 3D. Makes and sorts a distance array with int point IDs. Brute force, so O(n log n) time
-vector<int> Grid::kNearestNeighbors(int pointID) {
-	return kNearestNeighbors(points_[pointID]);
+vector<int> Grid::kNearestNeighbors(int pointID, bool neumann) {
+	return kNearestNeighbors(points_[pointID], neumann, (bcFlags_[pointID] != 0));
 }
-
-vector<int> Grid::kNearestNeighbors(Point refPoint) {
+// THIS IS BUGGED AND RESULTS IN RCM GIVING N - 1 order, MEANING WE DONT VISIT ALL POINTS.
+vector<int> Grid::kNearestNeighbors(Point refPoint, bool neumann, bool pointBCFlag) {
 	vector<std::pair<double, int>> distances;
+	Point queryPoint;
+	int samePoint = -1;
 	for (int i = 0; i < laplaceMatSize_; i++) {
-		Point queryPoint = points_[i];
+		queryPoint = points_[i];
 		distances.push_back(std::pair<double, int>(distance(refPoint, queryPoint), i));
+		
+		if (distances[i].first == 0) {
+			samePoint = i;
+		}
+		
 	}
 
 	
 	//max-heap selection algorithm
 	int k = properties_.stencilSize;
+	int lastInitIndex = k;
 	vector<std::pair<double, int>> maxHeap;
-	for (int i = 0; i < k; i++) {
+	for (int i = 0; i < lastInitIndex; i++) {
+		if (i != samePoint && (pointBCFlag && neumann && bcFlags_[i] != 0)) {
+			lastInitIndex++;
+			continue;
+		}
 		maxHeap.push_back(distances[i]);
 	}
 	std::make_heap(maxHeap.begin(), maxHeap.end());
-	for (int i = k; i < laplaceMatSize_; i++) {
-		if (distances[i] < maxHeap.front()) {
+	//cout << maxHeap.size() << " " << properties_.stencilSize << endl;
+	for (int i = lastInitIndex; i < laplaceMatSize_; i++) {
+		//cout << i << endl;
+		
+		if (i == samePoint || !(pointBCFlag && neumann && bcFlags_[i] != 0) && distances[i] < maxHeap.front()) {
 			std::pop_heap(maxHeap.begin(), maxHeap.end());
 			maxHeap.pop_back();
 
@@ -206,13 +293,32 @@ vector<int> Grid::kNearestNeighbors(Point refPoint) {
 	for (int i = 0; i < k; i++) {
 		nearestNeighbors.push_back(maxHeap[i].second);
 	}
+	
+	/*
+	double x, y;
+	int numBoundPoints = 0;
+	x = std::get<0>(refPoint);
+	y = std::get<1>(refPoint);
+	if (true) {
+		for (int i = 0; i < properties_.stencilSize; i++) {
+			if (bcFlags_[nearestNeighbors[i]] != 0) {
+				numBoundPoints++;
+			}
+		}
+	}
+	
+	//cout << "maxheap size: " << maxHeap.size() << "nearest neighbors size: " << nearestNeighbors.size() << endl;
+
+	cout << " num bc points: " << numBoundPoints << endl;
+	*/
 	return nearestNeighbors;
+	
 }
 //Builds PHS coefficients matrix for a point
 //returns pair with first = coeff matrix and second = list of neighbors, to save time.
-std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>> Grid::buildCoeffMatrix(Point point) {
+std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>> Grid::buildCoeffMatrix(Point point, bool neumann, bool pointBCFlag) {
 	int polyTerms = (properties_.polyDeg + 1)*(properties_.polyDeg + 2) / 2;
-	vector<int> neighbors = kNearestNeighbors(point);
+	vector<int> neighbors = kNearestNeighbors(point, neumann, pointBCFlag);
 	vector<Point> scaledPoints = shifting_scaling(neighbors, point);
 	//build A-matrix
 	Eigen::MatrixXd coeff_mat = Eigen::MatrixXd::Zero(properties_.stencilSize + polyTerms, properties_.stencilSize + polyTerms);
@@ -250,13 +356,100 @@ std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>> Grid::buildCoeffMatrix(P
 	return std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>>(coeff_mat, neighbors, scaledPoints);
 }
 
-std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>> Grid::buildCoeffMatrix(int pointID) {
-	return buildCoeffMatrix(points_[pointID]);
+std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>> Grid::buildCoeffMatrix(int pointID, bool neumann) {
+	return buildCoeffMatrix(points_[pointID], neumann, (bcFlags_[pointID] != 0));
+}
+std::pair<Eigen::VectorXd, vector<int>> Grid::derivx_weights(int pointID) {
+	std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>> coeffs = buildCoeffMatrix(pointID, neumannFlag_);
+	vector<int> neighbors = std::get<1>(coeffs);
+	vector<Point> scaledPoints = std::get<2>(coeffs);
+	int polyTerms = (properties_.polyDeg + 1)*(properties_.polyDeg + 2) / 2;
+	Eigen::VectorXd rhs = Eigen::VectorXd::Zero(properties_.stencilSize + polyTerms);
+
+	//Build RHS. xRef, yRef, xEval, yEval are already shifted and scaled.
+	Point evalPoint = scaledPoints.at(scaledPoints.size() - 1);
+	double xEval = std::get<0>(evalPoint);
+	double yEval = std::get<1>(evalPoint);
+	double yRef, xRef;
+	double M = (double)(properties_.rbfExp);
+	double coeff;
+	for (int i = 0; i < properties_.stencilSize; i++) {
+		xRef = std::get<0>(scaledPoints[i]);
+		yRef = std::get<1>(scaledPoints[i]);
+		if (i > 0) {
+			rhs(i) = M * std::pow(distance(scaledPoints[i], evalPoint), M - 2) * (xEval - xRef);
+		}
+	}
+	//poly terms
+	int rowIndex = properties_.stencilSize;
+	for (int p = 0; p <= properties_.polyDeg; p++) {
+		for (int q = 0; q <= p; q++) {
+			double laplacePoly = 0;
+			if (p - q - 1 >= 0) {
+				laplacePoly += (p - q)*std::pow(xEval, p - q - 1)*std::pow(yEval, q);
+			}
+			rhs(rowIndex) = laplacePoly;
+			rowIndex++;
+		}
+	}
+	//maybe add a condition number check here to use fullpiv or partialpiv
+	Eigen::VectorXd weights = std::get<0>(coeffs).fullPivLu().solve(rhs);
+	//cout << std::get<0>(coeffs) << endl;
+	//cout << rhs << endl;
+	double scale = std::get<0>(scaledPoints[scaledPoints.size() - 2]);
+	for (int i = 0; i < weights.rows(); i++) {
+		weights(i) /= scale;
+	}
+	//cout << weights << endl;
+	return std::pair<Eigen::VectorXd, vector<int>>(weights, neighbors);
+}
+std::pair<Eigen::VectorXd, vector<int>> Grid::derivy_weights(int pointID) {
+	std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>> coeffs = buildCoeffMatrix(pointID, neumannFlag_);
+	vector<int> neighbors = std::get<1>(coeffs);
+	vector<Point> scaledPoints = std::get<2>(coeffs);
+	int polyTerms = (properties_.polyDeg + 1)*(properties_.polyDeg + 2) / 2;
+	Eigen::VectorXd rhs = Eigen::VectorXd::Zero(properties_.stencilSize + polyTerms);
+
+	//Build RHS. xRef, yRef, xEval, yEval are already shifted and scaled.
+	Point evalPoint = scaledPoints.at(scaledPoints.size() - 1);
+	double xEval = std::get<0>(evalPoint);
+	double yEval = std::get<1>(evalPoint);
+	double yRef, xRef;
+	double M = (double)(properties_.rbfExp);
+	double coeff;
+	for (int i = 0; i < properties_.stencilSize; i++) {
+		xRef = std::get<0>(scaledPoints[i]);
+		yRef = std::get<1>(scaledPoints[i]);
+		if (i > 0) {
+			rhs(i) = M * std::pow(distance(scaledPoints[i], evalPoint), M - 2) * (yEval - yRef);
+		}
+	}
+	//poly terms
+	int rowIndex = properties_.stencilSize;
+	for (int p = 0; p <= properties_.polyDeg; p++) {
+		for (int q = 0; q <= p; q++) {
+			double laplacePoly = 0;
+			if (q - 1 >= 0) {
+				laplacePoly += q*std::pow(xEval, p - q)*std::pow(yEval, q-1);
+			}
+			rhs(rowIndex) = laplacePoly;
+			rowIndex++;
+		}
+	}
+	//maybe add a condition number check here to use fullpiv or partialpiv
+	Eigen::VectorXd weights = std::get<0>(coeffs).fullPivLu().solve(rhs);
+	//cout << std::get<0>(coeffs) << endl;
+	//cout << rhs << endl;
+	double scale = std::get<0>(scaledPoints[scaledPoints.size() - 2]);
+	for (int i = 0; i < weights.rows(); i++) {
+		weights(i) /= scale;
+	}
+	//cout << weights << endl;
+	return std::pair<Eigen::VectorXd, vector<int>>(weights, neighbors);
 }
 //Builds RHS and solves for the laplace weights for a point
 std::pair<Eigen::VectorXd, vector<int>> Grid::laplaceWeights(int pointID) {
-
-	std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>> coeffs = buildCoeffMatrix(pointID);
+	std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>> coeffs = buildCoeffMatrix(pointID, neumannFlag_);
 	vector<int> neighbors = std::get<1>(coeffs);
 	vector<Point> scaledPoints = std::get<2>(coeffs);
 	int polyTerms = (properties_.polyDeg + 1)*(properties_.polyDeg + 2) / 2;
@@ -304,14 +497,68 @@ std::pair<Eigen::VectorXd, vector<int>> Grid::laplaceWeights(int pointID) {
 	//cout << weights << endl;
 	return std::pair<Eigen::VectorXd, vector<int>>(weights, neighbors);
 }
+//normal vector is hard coded for square for now. fix.
+void Grid::build_deriv_normal_bound() {
+	double x, y;
+	std::pair<Eigen::VectorXd, vector<int>> coeffs;
+	int currPoint;
+	deriv_normal_coeffs_ = vector<deriv_normal_bc>();
+	deriv_normal_bc bound;
+	for (size_t i = 0; i < boundaries_.size(); i++) {
+		//dirichlet
+		if ((boundaries_[i]).type == 2) {
+			for (size_t j = 0; j < (boundaries_[i].bcPoints).size(); j++) {
+				currPoint = boundaries_[i].bcPoints[j];
+				x = std::get<0>(points_[currPoint]);
+				y = std::get<1>(points_[currPoint]);
+				if (x == 0 || x == 1) {
+					coeffs = derivx_weights(currPoint);
+				}
+				else if (y == 0 || y == 1) {
+					coeffs = derivy_weights(currPoint);
+				}
+				bound.pointID = currPoint;
+				bound.value = boundaries_[i].values[j];
+				bound.weights = coeffs.first;
+				bound.neighbors = coeffs.second;
+				deriv_normal_coeffs_.push_back(bound);
+			}
+		}
+	}
+	
+}
 //Builds Sparse Matrix that approximates laplacian operator for SOR from the interpolation weights.
 void Grid::build_laplacian() {
 	vector<Eigen::Triplet<double>> tripletList;
 	for (int i = 0; i < laplaceMatSize_; i++) {
 		std::pair <Eigen::VectorXd, vector<int>> weights = laplaceWeights(i);
-		for (size_t j = 0; j < weights.second.size(); j++) {
-
-			tripletList.push_back(Eigen::Triplet<double>(i, weights.second[j], weights.first(j)));
+		//Handle interior points first.
+		if (bcFlags_[i] != 2) {
+			for (size_t j = 0; j < weights.second.size(); j++) {
+				tripletList.push_back(Eigen::Triplet<double>(i, weights.second[j], weights.first(j)));
+			}
+		}
+		//Add column of ones if Neumann
+		if (neumannFlag_ && bcFlags_[i] != 2) {
+			tripletList.push_back(Eigen::Triplet<double>(i, laplaceMatSize_, 1));
+		}
+	}
+	//Add row of ones if Neumann
+	if (neumannFlag_) {
+		for (int i = 0; i < laplaceMatSize_ + 1; i++) {
+			if ((i == laplaceMatSize_) || bcFlags_[i] != 2) {
+				tripletList.push_back(Eigen::Triplet<double>(laplaceMatSize_, i, 1));
+			}
+		}
+	}
+	//Add neumann boundary rows: d/dn = 0
+	deriv_normal_bc bound;
+	if (neumannFlag_) {
+		for (size_t i = 0; i < deriv_normal_coeffs_.size(); i++) {
+			bound = deriv_normal_coeffs_[i];
+			for (size_t j = 0; j < bound.neighbors.size(); j++) {
+				tripletList.push_back(Eigen::Triplet<double>(bound.pointID, bound.neighbors[j], bound.weights.coeff(j)));
+			}
 		}
 	}
 	laplaceMat_->setFromTriplets(tripletList.begin(), tripletList.end());
@@ -407,9 +654,9 @@ void Grid::diagonal_scaling(Eigen::SparseMatrix<double, Eigen::RowMajor>* matrix
 		outerIdx++;
 	}
 }
-
-std::pair<Eigen::VectorXd, vector<int>> Grid::pointInterpWeights(std::tuple<double, double, double> point) {
-	std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>> coeffs = buildCoeffMatrix(point);
+//TODO: Fix multigrid stuff for Neumann after single grid works.
+std::pair<Eigen::VectorXd, vector<int>> Grid::pointInterpWeights(Point point) {
+	std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>> coeffs = buildCoeffMatrix(point, false, false);
 	int polyTerms = (properties_.polyDeg + 1)*(properties_.polyDeg + 2) / 2;
 	Eigen::VectorXd rhs = Eigen::VectorXd::Zero(properties_.stencilSize + polyTerms);
 	Eigen::MatrixXd coeff_mat = std::get<0>(coeffs);
@@ -439,7 +686,6 @@ std::pair<Eigen::VectorXd, vector<int>> Grid::pointInterpWeights(std::tuple<doub
 	}
 	return std::pair<Eigen::VectorXd, vector<int>>(weights, neighbors);
 }
-
 void Grid::cuthill_mckee_ordering(vector<vector<int>> &adjacency, vector<int> &order) {
 	
 	vector<bool> visited(laplaceMatSize_, false);
@@ -463,7 +709,6 @@ void Grid::cuthill_mckee_ordering(vector<vector<int>> &adjacency, vector<int> &o
 		}
 	}
 	order = new_order;
-	
 }
 void Grid::reverse_cuthill_mckee_ordering(vector<vector<int>> &adjacency, vector<int> &order) {
 	cuthill_mckee_ordering(adjacency, order);
@@ -475,7 +720,7 @@ void Grid::rcm_order_points() {
 	
 	vector<int> neighbors;
 	for (size_t i = 0; i < points_.size(); i++) {
-		neighbors = kNearestNeighbors(points_[i]);
+		neighbors = kNearestNeighbors(points_[i], neumannFlag_, (bcFlags_[i] != 0));
 		adjacency.push_back(neighbors);
 	}
 	reverse_cuthill_mckee_ordering(adjacency, order);
@@ -486,7 +731,6 @@ void Grid::rcm_order_points() {
 	vector<int> oldToRCMPtrs(points_.size());
 
 	for (size_t i = 0; i < points_.size(); i++) {
-		//cout << order[i] << endl;
 		newPoints[i] = points_[order[i]];
 		newBCFlag[i] = bcFlags_[order[i]];
 		newSource(i) = source_.coeff(order[i]);
@@ -500,7 +744,6 @@ void Grid::rcm_order_points() {
 	vector<double> newBCVals;
 	
 	for (size_t i = 0; i < boundaries_.size(); i++) {
-		//dirichlet
 		newBCPoints.clear();
 		newBCVals.clear();
 		for(size_t j = 0; j < boundaries_[i].bcPoints.size(); j++){

@@ -54,6 +54,7 @@ void Multigrid::buildMatrices() {
 	}
 	*/
 }
+
 void Multigrid::vCycle() {
 	//Restriction
 	Grid* currGrid;
@@ -71,8 +72,11 @@ void Multigrid::vCycle() {
 		currGrid->boundaryOp(gridType);
 		currGrid->sor(currGrid->laplaceMat_, currGrid->values_, &(currGrid->source_));
 
-		grids_[i - 1].second->source_ = (*(restrictionMatrices_[i])) * currGrid->residual();
+		(grids_[i - 1].second->source_)(Eigen::seq(0, grids_[i - 1].second->laplaceMatSize_ - 1)) = (*(restrictionMatrices_[i])) * (currGrid->residual())(Eigen::seq(0, currGrid->laplaceMatSize_-1));
 		grids_[i - 1].second->fix_vector_bound_coarse(&grids_[i-1].second->source_);
+		if (currGrid->neumannFlag_) {
+			grids_[i - 1].second->source_.coeffRef(grids_[i-1].second->source_.rows()-1) = 0;
+		}
 
 	}
 	//cout << grids_[0].second->source_.norm() << endl;
@@ -88,9 +92,11 @@ void Multigrid::vCycle() {
 	for (size_t i = 1; i < grids_.size(); i++) {
 		currGrid = grids_[i].second;
 		//correction
-		correction = (*prolongMatrices_[i - 1]) * (*grids_[i - 1].second->values_);
-		currGrid->fix_vector_bound_coarse(&correction);
-		*currGrid->values_ += correction;
+		correction = (*prolongMatrices_[i - 1]) * ((*grids_[i - 1].second->values_)(Eigen::seq(0, grids_[i - 1].second->laplaceMatSize_ - 1)));
+		if (!currGrid->neumannFlag_) {
+			currGrid->fix_vector_bound_coarse(&correction);
+		}
+		(*currGrid->values_)(Eigen::seq(0, currGrid->laplaceMatSize_ - 1)) += correction;
 		//smoother
 		currGrid->sor(currGrid->laplaceMat_, currGrid->values_, &(currGrid->source_));
 	}

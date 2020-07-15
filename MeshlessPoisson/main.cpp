@@ -59,16 +59,36 @@ void writeVectorToTxt(vector<double> vec, const char* filename)
 	file.close();
 }
 
-double calc_l1_error(Grid* grid) {
+double calc_l1_error(Grid* grid, bool neumannFlag) {
 	vector<Point> points = grid->points_;
 	Eigen::VectorXd actual(points.size());
 	double x, y;
 	for (size_t i = 0; i < points.size(); i++) {
 		x = std::get<0>(points[i]);
 		y = std::get<1>(points[i]);
-		actual(i) = std::sin(pi*x)*std::sin(pi*y);
+		actual(i) = neumannFlag? std::cos(pi*x)*std::cos(pi*y) : std::sin(pi*x)*std::sin(pi*y);
 	}
-	return (*grid->values_ - actual).lpNorm<1>() / grid->source_.lpNorm<1>();
+	double solMean = 0;
+	double manufacturedMean = 0;
+	if (!neumannFlag) {
+		return (*grid->values_ - actual).lpNorm<1>() / grid->laplaceMatSize_;
+	}
+
+	for (int i = 0; i < grid->laplaceMatSize_; i++) {
+		solMean += grid->values_->coeff(i) / grid->laplaceMatSize_;
+		manufacturedMean += actual.coeff(i) / grid->laplaceMatSize_;
+	}
+
+	for (int i = 0; i < grid->laplaceMatSize_; i++) {
+		grid->values_->coeffRef(i) += (manufacturedMean - solMean);
+	}
+
+	double error = 0;
+	for (int i = 0; i < points.size(); i++) {
+		error += std::abs(grid->values_->coeff(i) - actual.coeff(i));
+	}
+	error /= points.size();
+	return error;
 }
 void testCartesianSingleGrid() {
 
@@ -90,6 +110,7 @@ void testCartesianSingleGrid() {
 	cout << "l1 error: " << calc_l1_error(testGrid) << endl;
 	cout << "residual: " << testGrid->residual().norm() / testGrid->source_.norm() << endl;
 	*/
+	testGrid->boundaryOp("fine");
 	for (int i = 0; i < 50; i++) {
 		res.push_back(testGrid->residual().norm() / testGrid->source_.norm());
 		cout << "residual: " << testGrid->residual().norm() / testGrid->source_.norm() << endl;
@@ -162,11 +183,72 @@ Grid* genGmshGrid(const char* filename, int polydeg, int iters, std::string file
 	// cout << bPts.size() << endl;
 	return grid;
 }
-void testGmshSingleGrid() {
-	Grid* testGrid = genGmshGrid("finer_mesh.txt", 5, 5, "txt");
+Grid* genGmshGridNeumann(const char* filename, int polydeg, int iters, std::string filetype) {
+	vector<std::tuple<double, double, double>> points;
+	if (filetype.compare("txt") == 0) {
+		points = pointsFromTxts(filename);
+	}
+	else {
+		points = pointsFromMshFile(filename);
+	}
+	double x, y;
+	vector<int> bPts;
+	vector<double> bValues;
+	Eigen::VectorXd actual(points.size() + 1);
+	Eigen::VectorXd source(points.size() + 1);
+	for (size_t i = 0; i < points.size(); i++) {
+		x = std::get<0>(points[i]);
+		y = std::get<1>(points[i]);
+		actual(i) = std::cos(pi*x)*std::cos(pi*y);
+		source(i) = -2*pi*pi*std::cos(pi*x)*std::cos(pi*y);
+		if (x == 0 || x == 1 || y == 0 || y == 1) {
+			//cout << "x: " << x << " y: " << y << endl;
+			bPts.push_back(i);
+			bValues.push_back(0.0);
+		}
+	}
+	cout << bPts.size() << endl;
+	actual(actual.rows() - 1) = 0;
 
+	source(source.rows() - 1) = 0;
+	cout << "Grid Size: " << points.size() << endl;
+	Boundary boundary;
+	boundary.bcPoints = bPts;
+	boundary.type = 2;
+	boundary.values = bValues;
+	vector<Boundary> bcs;
+	bcs.push_back(boundary);
+	GridProperties props;
+	props.rbfExp = 3;
+	props.iters = iters;
+	props.polyDeg = polydeg;
+	// cloud size
+	props.stencilSize = (int)(0.75*(props.polyDeg + 1) * (props.polyDeg + 2));
+	props.omega = 1.4;
+	Grid* grid = new Grid(points, bcs, props, source);
+	grid->setBCFlag(0, std::string("neumann"), bValues);
+	//cout << grid->neumannFlag_ << endl;
+	//grid->rcm_order_points();
+	grid->build_deriv_normal_bound();
+	grid->build_laplacian();
+	grid->modify_coeff_neumann();
+	//*grid->values_ = actual;
+	// cout << bPts.size() << endl;
+	return grid;
+}
+void testGmshSingleGrid() {
+	Grid* testGrid = genGmshGridNeumann("inter_mesh.txt", 5, 5, "txt");
+	//cout << testGrid->laplaceMat_->toDense() << endl;
 	vector<double> res;
 	testGrid->boundaryOp("fine");
+	for (int i = 0; i < 10000; i++) {
+		cout << "residual: " << testGrid->residual().lpNorm<1>() / testGrid->source_.lpNorm<1>() << endl;
+		res.push_back(testGrid->residual().lpNorm<1>() / testGrid->source_.lpNorm<1>());
+		testGrid->sor(testGrid->laplaceMat_, testGrid->values_, &testGrid->source_);
+	}
+	testGrid->print_check_bc_normal_derivs();
+	//band matrix plotting.
+	
 	Eigen::SparseMatrix<double, 1> * matrix = testGrid->laplaceMat_;
 	const double* laplaceValues = matrix->valuePtr();
 	//column indices of values
@@ -179,6 +261,7 @@ void testGmshSingleGrid() {
 	valueIdx = 0;
 	innerIdx = 0;
 	outerIdx = 0;
+
 	vector<double> iv, jv;
 	for (int i = 0; i < matrix->rows(); i++) {
 		//diagCoeff = laplaceMat_->coeff(i, i);
@@ -193,9 +276,10 @@ void testGmshSingleGrid() {
 	}
 	writeVectorToTxt(iv, "i.txt");
 	writeVectorToTxt(jv, "j.txt");
+
+	//Residual Plotting
 	vector<Point> points = testGrid->points_;
 	Eigen::VectorXd actual(points.size());
-	/*
 	double x, y;
 	vector<double> xv, yv;
 	for (size_t i = 0; i < points.size(); i++) {
@@ -206,62 +290,65 @@ void testGmshSingleGrid() {
 	}
 	writeVectorToTxt(xv, "x.txt");
 	writeVectorToTxt(yv, "y.txt");
-	*/
+	
 
 	//testGrid->diagonal_scaling(testGrid->laplaceMat_, &testGrid->source_);
 	//cout << "num bc points: " << testGrid->boundaries_[0].bcPoints.size() << endl;
-	for (int i = 0; i < 8000; i++) {
-		cout << "residual: " << testGrid->residual().lpNorm<1>() / testGrid->source_.lpNorm<1>()<< endl;
-		res.push_back(testGrid->residual().lpNorm<1>() / testGrid->source_.lpNorm<1>());
-
-		//testGrid->directSolve();
-		testGrid->sor(testGrid->laplaceMat_, testGrid->values_, &testGrid->source_);
-	}
+	
 	vector<double> rawRes;
 	Eigen::VectorXd resid = testGrid->residual();
-	for (int i = 0; i < resid.rows(); i++) {
-		rawRes.push_back(resid.coeff(i));
+	for (int i = 0; i < resid.rows()- 1; i++) {
+		//rawRes.push_back(resid.coeff(i));
+		rawRes.push_back(testGrid->values_->coeff(i));
 	}
 	writeVectorToTxt(rawRes, "raw_res.txt");
 	cout << " values norm: " << testGrid->values_->lpNorm<1>() << endl;
+	
+
 	cout << testGrid->values_->maxCoeff() << endl;
 	cout << testGrid->values_->minCoeff() << endl;
-	cout << calc_l1_error(testGrid) << endl;
+	cout << calc_l1_error(testGrid, true) << endl;
 	
 }
-void testGmshMultigrid() {
+void testGmshDirichletMultigrid() {
 	Multigrid mg;
 
 	mg.addGrid(genGmshGrid("finer_mesh.txt", 5, 7, "txt"));
 	mg.addGrid(genGmshGrid("fine_mesh.txt", 3, 7, "txt"));
 	mg.addGrid(genGmshGrid("inter_mesh.txt", 3, 7, "txt"));
 	mg.addGrid(genGmshGrid("coar_mesh.txt", 3, 7, "txt"));
-
-	//mg.addGrid(genGmshGrid("gmshtest0/square_11825.msh", 5, 5, "msh"));
-	//mg.addGrid(genGmshGrid("gmshtest0/square_2555.msh", 5, 5, "msh"));
-	//mg.addGrid(genGmshGrid("gmshtest0/square_675.msh", 5, 5, "msh"));
-	//mg.addGrid(genGmshGrid("gmshtest0/square_171.msh", 5, 5, "msh"));
-
-	//mg.addGrid(genGmshGrid("square_test1_9482.msh", 5, 7, "msh"));
-	//mg.addGrid(genGmshGrid("square_test1_2221.msh", 3, 7, "msh"));
-	//mg.addGrid(genGmshGrid("square_test1_552.msh", 3, 7, "msh"));
-	//mg.addGrid(genGmshGrid("square_test1_149.msh", 3, 7, "msh"));
 	mg.buildMatrices();
-
+	cout << 1 << endl;
 	vector<double> res;
 	for (int i = 0; i < 100; i++) {
 		res.push_back(mg.residual());
 		mg.vCycle();
 	}
-	cout << calc_l1_error(mg.grids_[mg.grids_.size()-1].second) << endl;
+	cout << calc_l1_error(mg.grids_[mg.grids_.size()-1].second, false) << endl;
 	writeVectorToTxt(res, "residual.txt");
 
 
 }
+void testGmshNeumannMultigrid() {
+	Multigrid mg;
+
+	mg.addGrid(genGmshGridNeumann("finer_mesh.txt", 5, 7, "txt"));
+	mg.addGrid(genGmshGridNeumann("fine_mesh.txt", 3, 7, "txt"));
+	mg.addGrid(genGmshGridNeumann("inter_mesh.txt", 3, 7, "txt"));
+	mg.addGrid(genGmshGridNeumann("coar_mesh.txt", 3, 7, "txt"));
+	mg.buildMatrices();
+	vector<double> res;
+	for (int i = 0; i < 120; i++) {
+		res.push_back(mg.residual());
+		mg.vCycle();
+	}
+	cout << calc_l1_error(mg.grids_[mg.grids_.size() - 1].second, true) << endl;
+	writeVectorToTxt(res, "residual.txt");
+}
 int main() {
 
-	//testGmshSingleGrid();
-	testGmshMultigrid();
-	//testCartesianMultigrid();
+	testGmshSingleGrid();
+	//testGmshDirichletMultigrid();
+	//testGmshNeumannMultigrid();
 	return 0;
 }

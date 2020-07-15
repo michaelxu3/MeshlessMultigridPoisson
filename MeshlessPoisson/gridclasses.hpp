@@ -1,5 +1,7 @@
 #pragma once
 #include <vector>
+#include <Eigen/Dense>
+#include <Eigen/Sparse>
 class GridProperties {
 public:
 	int rbfExp;
@@ -14,4 +16,12 @@ public:
 	int type;
 	std::vector<int> bcPoints;
 	std::vector<double> values;
+};
+class deriv_normal_bc {
+public:
+	int pointID;
+	Eigen::VectorXd weights;
+	std::vector<int> neighbors;
+	double value;
+
 };
