@@ -1,4 +1,5 @@
-#pragma once
+#ifndef GRID_CLASSES_H
+#define GRID_CLASSES_H
 #include <vector>
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
@@ -25,3 +26,4 @@ public:
 	double value;
 
 };
+#endif

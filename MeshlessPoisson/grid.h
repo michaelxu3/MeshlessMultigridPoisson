@@ -4,6 +4,7 @@
 #include <tuple>
 #include <string>
 #include "fileReadingFunctions.h"
+#include "general_computation_functions.h"
 typedef std::tuple<double, double, double> Point;
 using std::vector;
 class Grid {
@@ -26,6 +27,7 @@ public:
 				GridProperties properties, Eigen::VectorXd source);
 	~Grid();
 
+	void boundaryOp(std::string coarse);
 	void setBCFlag(int boundary, std::string type, vector<double> boundValue);
 	void build_laplacian();
 	void build_deriv_normal_bound();
@@ -34,21 +36,14 @@ public:
 	void setNeumannFlag();
 	void modify_coeff_neumann();
 	void bound_eval_neumann();
-	void directSolve();
 	void fix_vector_bound_coarse (Eigen::VectorXd* vec);
 	void print_bc_values(Eigen::VectorXd vec);
 	void print_check_bc_normal_derivs();
 
-	std::pair<double, double> minMaxCoord(vector<int> pointIDs, char coord);
-	std::vector<std::tuple<double, double, double>> shifting_scaling(vector<int> pointIDs, Point evalPoint);
 	Eigen::VectorXd residual();
 
-	void diagonal_scaling(Eigen::SparseMatrix<double, 1>* matrix, Eigen::VectorXd* rhs);
-
-	void cuthill_mckee_ordering(vector<vector<int>> &adjacency, vector<int> &order);
-	void reverse_cuthill_mckee_ordering(vector<vector<int>> &adjacency, vector<int> &order);
 	void rcm_order_points();
-
+	vector<Point> pointIDs_to_vector(const vector<int> &pointIDs);
 	vector<int> kNearestNeighbors(Point point, bool neumannFlag, bool pointBCFlag);
 	vector <int> kNearestNeighbors(int pointNumber, bool neumannFlag);
 
@@ -62,8 +57,6 @@ public:
 	int getSize();
 	int getStencilSize();
 	int getPolyDeg();
-
-	void boundaryOp(std::string coarse);
 	vector<double> cond_rbf;
 };
 #endif

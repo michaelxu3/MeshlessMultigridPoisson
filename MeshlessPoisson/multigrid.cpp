@@ -71,7 +71,7 @@ void Multigrid::vCycle() {
 		}
 		currGrid->boundaryOp(gridType);
 		currGrid->sor(currGrid->laplaceMat_, currGrid->values_, &(currGrid->source_));
-
+		
 		(grids_[i - 1].second->source_)(Eigen::seq(0, grids_[i - 1].second->laplaceMatSize_ - 1)) = (*(restrictionMatrices_[i])) * (currGrid->residual())(Eigen::seq(0, currGrid->laplaceMatSize_-1));
 		grids_[i - 1].second->fix_vector_bound_coarse(&grids_[i-1].second->source_);
 		if (currGrid->neumannFlag_) {

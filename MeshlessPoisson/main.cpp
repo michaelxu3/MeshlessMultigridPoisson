@@ -114,7 +114,7 @@ void testCartesianSingleGrid() {
 	for (int i = 0; i < 50; i++) {
 		res.push_back(testGrid->residual().norm() / testGrid->source_.norm());
 		cout << "residual: " << testGrid->residual().norm() / testGrid->source_.norm() << endl;
-		testGrid->sor(testGrid->laplaceMat_, testGrid->values_, &testGrid->source_);
+		//sor(testGrid, testGrid->laplaceMat_, testGrid->values_, &testGrid->source_);
 	}
 }
 void testCartesianMultigrid(){
@@ -228,7 +228,7 @@ Grid* genGmshGridNeumann(const char* filename, int polydeg, int iters, std::stri
 	Grid* grid = new Grid(points, bcs, props, source);
 	grid->setBCFlag(0, std::string("neumann"), bValues);
 	//cout << grid->neumannFlag_ << endl;
-	//grid->rcm_order_points();
+	grid->rcm_order_points();
 	grid->build_deriv_normal_bound();
 	grid->build_laplacian();
 	grid->modify_coeff_neumann();
@@ -244,7 +244,7 @@ void testGmshSingleGrid() {
 	for (int i = 0; i < 10000; i++) {
 		cout << "residual: " << testGrid->residual().lpNorm<1>() / testGrid->source_.lpNorm<1>() << endl;
 		res.push_back(testGrid->residual().lpNorm<1>() / testGrid->source_.lpNorm<1>());
-		testGrid->sor(testGrid->laplaceMat_, testGrid->values_, &testGrid->source_);
+		//sor(testGrid, testGrid->laplaceMat_, testGrid->values_, &testGrid->source_);
 	}
 	testGrid->print_check_bc_normal_derivs();
 	//band matrix plotting.
@@ -313,12 +313,11 @@ void testGmshSingleGrid() {
 void testGmshDirichletMultigrid() {
 	Multigrid mg;
 
-	mg.addGrid(genGmshGrid("finer_mesh.txt", 5, 7, "txt"));
-	mg.addGrid(genGmshGrid("fine_mesh.txt", 3, 7, "txt"));
-	mg.addGrid(genGmshGrid("inter_mesh.txt", 3, 7, "txt"));
-	mg.addGrid(genGmshGrid("coar_mesh.txt", 3, 7, "txt"));
+	mg.addGrid(genGmshGrid("finer_mesh.txt", 5, 3, "txt"));
+	mg.addGrid(genGmshGrid("fine_mesh.txt", 3, 3, "txt"));
+	mg.addGrid(genGmshGrid("inter_mesh.txt", 3, 3, "txt"));
+	mg.addGrid(genGmshGrid("coar_mesh.txt", 3, 3, "txt"));
 	mg.buildMatrices();
-	cout << 1 << endl;
 	vector<double> res;
 	for (int i = 0; i < 100; i++) {
 		res.push_back(mg.residual());
@@ -332,13 +331,14 @@ void testGmshDirichletMultigrid() {
 void testGmshNeumannMultigrid() {
 	Multigrid mg;
 
-	mg.addGrid(genGmshGridNeumann("finer_mesh.txt", 5, 7, "txt"));
-	mg.addGrid(genGmshGridNeumann("fine_mesh.txt", 3, 7, "txt"));
-	mg.addGrid(genGmshGridNeumann("inter_mesh.txt", 3, 7, "txt"));
-	mg.addGrid(genGmshGridNeumann("coar_mesh.txt", 3, 7, "txt"));
+	mg.addGrid(genGmshGridNeumann("finer_mesh.txt", 5, 5, "txt"));
+	mg.addGrid(genGmshGridNeumann("fine_mesh.txt", 3, 5, "txt"));
+	mg.addGrid(genGmshGridNeumann("inter_mesh.txt", 3, 5, "txt"));
+	mg.addGrid(genGmshGridNeumann("coar_mesh.txt", 3, 5, "txt"));
+	mg.addGrid(genGmshGridNeumann("coarser_mesh.txt", 3, 5, "txt"));
 	mg.buildMatrices();
 	vector<double> res;
-	for (int i = 0; i < 120; i++) {
+	for (int i = 0; i < 200; i++) {
 		res.push_back(mg.residual());
 		mg.vCycle();
 	}
@@ -347,8 +347,8 @@ void testGmshNeumannMultigrid() {
 }
 int main() {
 
-	testGmshSingleGrid();
+	//testGmshSingleGrid();
 	//testGmshDirichletMultigrid();
-	//testGmshNeumannMultigrid();
+	testGmshNeumannMultigrid();
 	return 0;
 }
