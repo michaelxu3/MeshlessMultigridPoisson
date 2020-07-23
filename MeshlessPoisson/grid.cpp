@@ -1,9 +1,4 @@
-#include "grid.h"
-#include <stdexcept>
-#include "math.h"
-#include <iostream>
-#include <algorithm>
-#include <queue>
+#include "grid.h"     
 #define pi 3.141592653589793238462643383279
 using std::cout;
 using std::endl;
@@ -61,7 +56,33 @@ void Grid::setNeumannFlag() {
 	neumannFlag_ = false;
 }
 void Grid::modify_coeff_neumann() {
+	/*
+	if (implicitFlag_) {
+		Eigen::SparseMatrix<double, 1> mat = *laplaceMat_;
+		Eigen::SparseMatrix<double, 1>* laplaceMat = &mat;
 
+		vector<int> neighbors;
+		double A_ij, A_jj, A_ik, A_jk;
+		for (int i = 0; i < laplaceMat->rows() - 1; i++) {
+			if (bcFlags_[i] != 0) {
+				continue;
+			}
+			for (int j = 0; j < laplaceMat->cols() - 1; j++) {
+				if (bcFlags_[j] == 2) {
+					neighbors = kNearestNeighbors(j, true);
+					A_jj = laplaceMat->coeff(j, j);
+					A_ij = laplaceMat->coeff(i, j);
+					for (int k = 0; k < neighbors.size(); k++) {
+						A_ik = laplaceMat->coeff(i, neighbors[k]);
+						A_jk = laplaceMat->coeff(j, neighbors[k]);
+						laplaceMat_->coeffRef(i, neighbors[k]) -= A_ij * A_jk / A_jj;
+					}
+					laplaceMat_->coeffRef(i, j) = 0;
+				}
+			}
+		}
+	}
+	*/
 	for (int i = 0; i < source_.rows() - 1; i++) {
 		if (bcFlags_[i] == 2) {
 			source_(i) = 0;
@@ -121,6 +142,7 @@ void Grid::sor(Eigen::SparseMatrix<double, Eigen::RowMajor>* matrix, Eigen::Vect
 			rowStartIdx = outerValues[outerIdx];
 			rowEndIdx = outerValues[outerIdx + 1];
 			for (int j = rowStartIdx; j < rowEndIdx; j++) {
+
 				if (innerValues[j] == i) {
 					diagCoeff = laplaceValues[j];
 					continue;
@@ -143,6 +165,10 @@ Eigen::VectorXd Grid::residual() {
 	Eigen::VectorXd res = source_ - (*laplaceMat_) * (*values_);
 	fix_vector_bound_coarse(&res);
 	return res;
+}
+double Grid::cond_L() {
+	Eigen::MatrixXd mat = laplaceMat_->toDense();
+	return mat.lpNorm<1>() * mat.inverse().lpNorm<1>();
 }
 void Grid::print_bc_values(Eigen::VectorXd vec) {
 	for (size_t i = 0; i < boundaries_.size(); i++) {
@@ -409,13 +435,24 @@ void Grid::build_deriv_normal_bound() {
 	int currPoint;
 	deriv_normal_coeffs_ = vector<deriv_normal_bc>();
 	deriv_normal_bc bound;
+	double root2 = std::sqrt(2);
 	for (size_t i = 0; i < boundaries_.size(); i++) {
 		if ((boundaries_[i]).type == 2) {
 			for (size_t j = 0; j < (boundaries_[i].bcPoints).size(); j++) {
 				currPoint = boundaries_[i].bcPoints[j];
 				x = std::get<0>(points_[currPoint]);
 				y = std::get<1>(points_[currPoint]);
-				if (x == 0 || x == 1) {
+				if ((x == 0 && y == 0) || (x == 1 && y == 1)) {
+					coeffs = derivx_weights(currPoint);
+					coeffs.first *= root2;
+					coeffs.first += root2 * derivy_weights(currPoint).first;
+				}
+				else if ((x == 0 && y == 1) || (x == 1 && y == 0)){
+					coeffs = derivx_weights(currPoint);
+					coeffs.first *= root2;
+					coeffs.first -= root2 * derivy_weights(currPoint).first;
+				}
+				else if (x == 0 || x == 1) {
 					coeffs = derivx_weights(currPoint);
 				}
 				else if (y == 0 || y == 1) {
@@ -463,6 +500,74 @@ void Grid::build_laplacian() {
 	}
 	laplaceMat_->setFromTriplets(tripletList.begin(), tripletList.end());
 	laplaceMat_->makeCompressed();
+	if (!implicitFlag_) {
+		return;
+	}
+
+	double* laplaceValues = laplaceMat_->valuePtr();
+	const int* innerValues = laplaceMat_->innerIndexPtr();
+	const int* outerValues = laplaceMat_->outerIndexPtr();
+	int outerIdx_int, rowStartIdx_int, rowEndIdx_int, 
+		outerIdx_bound, rowStartIdx_bound, rowEndIdx_bound;
+	double A_ij, A_jj, A_ik, A_jk, A_ij_mod, newValue;
+	outerIdx_int = 0;
+	//stores nonzero entries on current row only.
+	vector<double> tempRowValues;
+	for (int i = 0; i < laplaceMat_->rows() - 1; i++) {
+		if (bcFlags_[i] != 0) {
+			outerIdx_int++;
+			continue;
+		}
+		tempRowValues = vector<double>(laplaceMat_->rows(), 0);
+		rowStartIdx_int = outerValues[outerIdx_int];
+		rowEndIdx_int = outerValues[outerIdx_int + 1];
+		//Modify the approriate coeffs for every boundary point in stencil.
+		for (int j = rowStartIdx_int; j < rowEndIdx_int; j++) {
+			if (innerValues[j] == laplaceMat_->rows() - 1 || bcFlags_[innerValues[j]] != 2) {
+				continue;
+			}
+			//Fill up tempRowValues
+			for (int j1 = rowStartIdx_int; j1 < rowEndIdx_int; j1++) {
+				tempRowValues[innerValues[j1]] = laplaceValues[j1];
+			}
+			outerIdx_bound = innerValues[j];
+			rowStartIdx_bound = outerValues[outerIdx_bound];
+			rowEndIdx_bound = outerValues[outerIdx_bound + 1];
+
+			A_ij = laplaceValues[j];
+			
+			//find diag
+			for (int k = rowStartIdx_bound; k < rowEndIdx_bound; k++) {
+				if (innerValues[j] == innerValues[k]) {
+					//cout << "found" << endl;
+					A_jj = laplaceValues[k];
+					break;
+				}
+			}
+			
+			for (int k = rowStartIdx_bound; k < rowEndIdx_bound; k++) {
+				A_ik = tempRowValues[innerValues[k]];
+				//cout << A_ik << endl;
+				A_jk = laplaceValues[k];
+				//When you assign 2 values to duplicate i,j indices, setFromTriplets SUMS all of the entries.
+				//So I really don't even need A_ik.
+				newValue = - A_ij * A_jk / A_jj;
+				if (A_jj == A_jk) {
+					A_ij_mod = A_ij + newValue;
+				}
+				tripletList.push_back(Eigen::Triplet<double>(i, innerValues[k], -newValue));
+			}
+			//Sets A_ij to zero by exploiting setFromTriplets behavior.
+			tripletList.push_back(Eigen::Triplet<double>(i, innerValues[j], -A_ij_mod));
+			
+		}
+		outerIdx_int++;
+	}
+	delete laplaceMat_;
+	laplaceMat_ = new Eigen::SparseMatrix<double, Eigen::RowMajor>(points_.size() + 1, points_.size() + 1);
+	laplaceMat_->setFromTriplets(tripletList.begin(), tripletList.end());
+	laplaceMat_->makeCompressed();
+	
 }
 
 std::pair<Eigen::VectorXd, vector<int>> Grid::pointInterpWeights(Point point) {
@@ -503,6 +608,26 @@ void Grid::rcm_order_points() {
 		neighbors = kNearestNeighbors(points_[i], neumannFlag_, (bcFlags_[i] != 0));
 		adjacency.push_back(neighbors);
 	}
+	if (neumannFlag_ && implicitFlag_) {
+		vector<int> bcPts;
+		//first sweep through points to find all boundary points
+		for (size_t i = 0; i < points_.size(); i++) {
+			if (bcFlags_[i] == 0) {
+				for (int j = 0; j < adjacency[i].size(); j++) {
+					if (bcFlags_[adjacency[i].at(j)] == 2) {
+						for (int k = 0; k < adjacency[adjacency[i].at(j)].size(); k++) {
+							auto it = std::find(adjacency[i].begin(), adjacency[i].end(), adjacency[adjacency[i].at(j)].at(k));
+							if (it == adjacency[i].end()) {
+								adjacency[i].push_back(adjacency[adjacency[i].at(j)].at(k));
+							}
+						}
+
+					}
+				}
+			}
+		}
+	}
+
 	reverse_cuthill_mckee_ordering(adjacency, order);
 	
 	vector<Point> newPoints = points_;

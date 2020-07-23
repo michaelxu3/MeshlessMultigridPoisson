@@ -1,6 +1,5 @@
 #pragma once
 #include "fileReadingFunctions.h"
-#include <iostream>
 //stolen from Shantanu's code
 std::vector<std::tuple<double, double, double>> pointsFromMshFile(const char* fname) {
 	std::vector<std::tuple<double, double, double>> points;
@@ -63,7 +62,16 @@ std::vector<int> orderFromTxt(const char* fname, int nv) {
 	for (int iv = 0; iv < nv; iv++)
 	{
 		fscanf(file, "%i ", &itemp); //x co-ordinate
-		order.push_back(itemp);
 	}
 	return order;
+}
+void writeVectorToTxt(std::vector<double> vec, const char* filename)
+{
+	std::ofstream file;
+	file.open(filename);
+	//f << fixed << setprecision(2) << endl;
+	for (size_t i = 0; i < vec.size(); i++) {
+		file << vec[i] << "\n";
+	}
+	file.close();
 }

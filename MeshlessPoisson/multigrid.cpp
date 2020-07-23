@@ -5,6 +5,7 @@ using std::cout;
 using std::endl;
 Multigrid::Multigrid() {
 	grids_ = vector<std::pair<int, Grid*>>(); //int = grid size
+	residuals_ = vector<double>();
 }
 Multigrid::~Multigrid() {
 	for (size_t i = 0; i < grids_.size(); i++) {
@@ -60,6 +61,7 @@ void Multigrid::vCycle() {
 	Grid* currGrid;
 	currGrid = grids_[grids_.size() - 1].second;
 	double resid_norm = residual();
+	residuals_.push_back(resid_norm);
 	std::cout << std::setprecision(12) << "Residual: " << resid_norm << std::endl;
 	//Restriction
 	for (size_t i = grids_.size() - 1; i > 0; i--) {

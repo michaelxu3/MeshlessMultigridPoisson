@@ -7,6 +7,8 @@ public:
 	vector<int> sorGridIters_;
 	vector<Eigen::SparseMatrix<double>*> restrictionMatrices_;
 	vector<Eigen::SparseMatrix<double>*> prolongMatrices_;
+	vector<double> residuals_;
+
 	void sortGridsBySize();
 	Eigen::SparseMatrix<double>* buildInterpMatrix(Grid* baseGrid, Grid* targetGrid);
 	void buildRestrictionMatrices();

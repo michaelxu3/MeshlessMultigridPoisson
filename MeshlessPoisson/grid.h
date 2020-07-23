@@ -5,6 +5,14 @@
 #include <string>
 #include "fileReadingFunctions.h"
 #include "general_computation_functions.h"
+#include <stdexcept>
+#include "math.h"
+#include <iostream>
+#include <algorithm>
+#include <queue>
+#include <time.h>
+#include <unordered_map>  
+
 typedef std::tuple<double, double, double> Point;
 using std::vector;
 class Grid {
@@ -22,6 +30,7 @@ public:
 	Eigen::SparseMatrix<double, Eigen::RowMajor>* laplaceMat_;
 	vector<int> bcFlags_;
 	bool neumannFlag_;
+	bool implicitFlag_;
 
 	Grid(vector<std::tuple<double, double, double>> points, vector<Boundary> boundaries, 
 				GridProperties properties, Eigen::VectorXd source);
@@ -40,6 +49,7 @@ public:
 	void print_bc_values(Eigen::VectorXd vec);
 	void print_check_bc_normal_derivs();
 
+	double cond_L();
 	Eigen::VectorXd residual();
 
 	void rcm_order_points();
