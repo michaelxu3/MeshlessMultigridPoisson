@@ -22,6 +22,8 @@ Grid::Grid(vector<Point> points, vector<Boundary> boundaries ,
 	values_ = new Eigen::VectorXd(A_size);
 	values_->setZero();
 
+	neumann_boundary_coeffs_ = new Eigen::SparseMatrix<double, Eigen::RowMajor>(A_size, A_size);
+	diags = Eigen::VectorXd(A_size);
 }
 Grid::~Grid() {
 	delete values_;
@@ -56,46 +58,7 @@ void Grid::setNeumannFlag() {
 	}
 	neumannFlag_ = false;
 }
-void Grid::modify_source_inhomogen_neumann() {
-	double* laplaceValues = laplaceMat_->valuePtr();
-	const int* innerValues = laplaceMat_->innerIndexPtr();
-	const int* outerValues = laplaceMat_->outerIndexPtr();
-	int outerIdx_int, rowStartIdx_int, rowEndIdx_int,
-		outerIdx_bound, rowStartIdx_bound, rowEndIdx_bound;
-	double A_ij, A_jj, A_ik, A_jk, A_ij_mod, newValue;
-	outerIdx_int = 0;
-	//stores nonzero entries on current row only.
-	vector<double> tempRowValues;
-	for (int i = 0; i < laplaceMat_->rows() - 1; i++) {
-		if (bcFlags_[i] != 0) {
-			outerIdx_int++;
-			continue;
-		}
-		tempRowValues.clear();
-		rowStartIdx_int = outerValues[outerIdx_int];
-		rowEndIdx_int = outerValues[outerIdx_int + 1];
 
-		//First find a boundary coefficient.
-		newValue = 0;
-		for (int j = rowStartIdx_int; j < rowEndIdx_int; j++) {
-			if (innerValues[j] == laplaceMat_->size() - 1 || bcFlags_[innerValues[j]] != 2) {
-				continue;
-			}
-			A_ij = laplaceValues[j];
-			//Find the diagonal on the jth row
-			rowStartIdx_bound = outerValues[innerValues[j]];
-			rowEndIdx_bound = outerValues[innerValues[j] + 1];
-			for (int k = rowStartIdx_bound; k < rowEndIdx_bound; k++) {
-				if (innerValues[k] == innerValues[j]) {
-					A_jj = laplaceValues[k];
-					break;
-				}
-			}
-
-		}
-			
-	}
-}
 void Grid::modify_coeff_neumann(std::string coarse) {
 
 	for (size_t i = 0; i < boundaries_.size(); i++) {
@@ -469,7 +432,8 @@ void Grid::fix_bounds_conn(std::vector<std::pair<int, int>>& ptsConn) {
 		} while (curr_bc_point != start_bc_point);
 	}
 }
-void Grid::build_normal_vecs(const char* filename) {
+void Grid::build_normal_vecs(const char* filename, std::string geomtype) {
+	
 	normalVecs_ = vector<Point>(points_.size(), std::make_tuple(0, 0, 0));
 	Point conn_vec, norm;
 	vector<std::pair<int, int>> ptsConn = boundPtsConnFromMsh(filename, bcFlags_);
@@ -480,11 +444,27 @@ void Grid::build_normal_vecs(const char* filename) {
 		curr_bc_point = start_bc_point;
 		do {
 			conn_vec = vec_from_pts(points_[ptsConn[curr_bc_point].first], points_[ptsConn[curr_bc_point].second]);
-			norm = unit_normal_vec(conn_vec, true);
+			norm = unit_normal_vec(conn_vec, false);
 			normalVecs_[curr_bc_point] = norm;
 			//cout << "norm: " << std::get<0>(norm) << " " << std::get<1>(norm) << endl;
 			curr_bc_point = ptsConn[curr_bc_point].first;
 		} while (curr_bc_point != start_bc_point);
+	}
+	
+	Point curr;
+	double x, y, normPoint;
+	if (geomtype.compare("square_with_circle") == 0) {
+		for (size_t b = 0; b < boundaries_[1].bcPoints.size(); b++) {
+			curr = points_[boundaries_[1].bcPoints[b]];
+			x = std::get<0>(curr);
+			y = std::get<1>(curr);
+			x = x - 0.5;
+			y = y - 0.5;
+			normPoint = std::sqrt(x*x + y * y);
+			x /= normPoint;
+			y /= normPoint;
+			normalVecs_[boundaries_[1].bcPoints[b]] = std::make_tuple(x, y, 0);
+		}
 	}
 }
 
@@ -519,11 +499,19 @@ void Grid::build_deriv_normal_bound() {
 }
 void Grid::build_laplacian() {
 	vector<Eigen::Triplet<double>> tripletList;
+	vector<Eigen::Triplet<double>> boundaryList;
+
 	for (int i = 0; i < laplaceMatSize_; i++) {
 		std::pair <Eigen::VectorXd, vector<int>> weights = laplaceWeights(i);
 		if (bcFlags_[i] != 2) {
 			for (size_t j = 0; j < weights.second.size(); j++) {
 				tripletList.push_back(Eigen::Triplet<double>(i, weights.second[j], weights.first(j)));
+				if (bcFlags_[i] == 0 && bcFlags_[weights.second[j]] == 2) {
+					boundaryList.push_back(Eigen::Triplet<double>(i, weights.second[j], weights.first(j)));
+				}
+				if (i == weights.second[j]) {
+					diags.coeffRef(i) = weights.first(j);
+				}
 			}
 		}
 		if (neumannFlag_ && bcFlags_[i] != 2) {
@@ -549,6 +537,8 @@ void Grid::build_laplacian() {
 	}
 	laplaceMat_->setFromTriplets(tripletList.begin(), tripletList.end());
 	laplaceMat_->makeCompressed();
+	neumann_boundary_coeffs_->setFromTriplets(boundaryList.begin(), boundaryList.end());
+	neumann_boundary_coeffs_->makeCompressed();
 	if (!implicitFlag_) {
 		return;
 	}
@@ -584,15 +574,7 @@ void Grid::build_laplacian() {
 			rowEndIdx_bound = outerValues[outerIdx_bound + 1];
 
 			A_ij = laplaceValues[j];
-			
-			//find diag
-			for (int k = rowStartIdx_bound; k < rowEndIdx_bound; k++) {
-				if (innerValues[j] == innerValues[k]) {
-					A_jj = laplaceValues[k];
-					break;
-				}
-			}
-			
+			A_jj = diags.coeff(innerValues[j]);
 			for (int k = rowStartIdx_bound; k < rowEndIdx_bound; k++) {
 				A_ik = tempRowValues[innerValues[k]];
 				A_jk = laplaceValues[k];
@@ -605,7 +587,7 @@ void Grid::build_laplacian() {
 				tripletList.push_back(Eigen::Triplet<double>(i, innerValues[k], -newValue));
 			}
 			//Sets A_ij to zero by exploiting setFromTriplets behavior.
-			tripletList.push_back(Eigen::Triplet<double>(i, innerValues[j], -A_ij_mod));
+			tripletList.push_back(Eigen::Triplet<double>(i, innerValues[j], -A_ij));
 			
 		}
 		outerIdx_int++;
@@ -615,6 +597,26 @@ void Grid::build_laplacian() {
 	laplaceMat_->setFromTriplets(tripletList.begin(), tripletList.end());
 	laplaceMat_->makeCompressed();
 	
+}
+void Grid::push_inhomog_to_rhs() {
+	double* laplaceValues_bound = neumann_boundary_coeffs_->valuePtr();
+	const int* innerValues = neumann_boundary_coeffs_->innerIndexPtr();
+	const int* outerValues= neumann_boundary_coeffs_->outerIndexPtr();
+	
+	double diag, A_ij;
+	for (int i = 0; i < laplaceMatSize_; i++) {
+		if (bcFlags_[i] != 0) {
+			continue;
+		}
+		for (int j = outerValues[i]; j < outerValues[i+ 1]; j++) {
+			diag = diags.coeff(innerValues[j]);
+			A_ij = laplaceValues_bound[j];
+			//cout << A_ij << endl;
+			//cout << laplaceMat_->coeff(i, innerValues[j]) << endl;
+			source_(innerValues[j]) -= A_ij * source_.coeff(innerValues[j]) / diag;
+		}
+	}
+
 }
 
 std::pair<Eigen::VectorXd, vector<int>> Grid::pointInterpWeights(Point point) {
