@@ -16,6 +16,7 @@ Grid::Grid(vector<Point> points, vector<Boundary> boundaries ,
 	laplaceMatSize_ = numPoint;
 	int A_size = neumannFlag_ ? numPoint + 1 : numPoint;
 	bcFlags_ = std::vector<int>(numPoint);
+	normalVecs_ = std::vector<Point>(numPoint);
 	laplaceMat_ = new Eigen::SparseMatrix<double, Eigen::RowMajor>(A_size, A_size);
 	laplaceMat_->setZero();
 	values_ = new Eigen::VectorXd(A_size);
@@ -55,40 +56,56 @@ void Grid::setNeumannFlag() {
 	}
 	neumannFlag_ = false;
 }
-void Grid::modify_coeff_neumann() {
-	/*
-	if (implicitFlag_) {
-		Eigen::SparseMatrix<double, 1> mat = *laplaceMat_;
-		Eigen::SparseMatrix<double, 1>* laplaceMat = &mat;
+void Grid::modify_source_inhomogen_neumann() {
+	double* laplaceValues = laplaceMat_->valuePtr();
+	const int* innerValues = laplaceMat_->innerIndexPtr();
+	const int* outerValues = laplaceMat_->outerIndexPtr();
+	int outerIdx_int, rowStartIdx_int, rowEndIdx_int,
+		outerIdx_bound, rowStartIdx_bound, rowEndIdx_bound;
+	double A_ij, A_jj, A_ik, A_jk, A_ij_mod, newValue;
+	outerIdx_int = 0;
+	//stores nonzero entries on current row only.
+	vector<double> tempRowValues;
+	for (int i = 0; i < laplaceMat_->rows() - 1; i++) {
+		if (bcFlags_[i] != 0) {
+			outerIdx_int++;
+			continue;
+		}
+		tempRowValues.clear();
+		rowStartIdx_int = outerValues[outerIdx_int];
+		rowEndIdx_int = outerValues[outerIdx_int + 1];
 
-		vector<int> neighbors;
-		double A_ij, A_jj, A_ik, A_jk;
-		for (int i = 0; i < laplaceMat->rows() - 1; i++) {
-			if (bcFlags_[i] != 0) {
+		//First find a boundary coefficient.
+		newValue = 0;
+		for (int j = rowStartIdx_int; j < rowEndIdx_int; j++) {
+			if (innerValues[j] == laplaceMat_->size() - 1 || bcFlags_[innerValues[j]] != 2) {
 				continue;
 			}
-			for (int j = 0; j < laplaceMat->cols() - 1; j++) {
-				if (bcFlags_[j] == 2) {
-					neighbors = kNearestNeighbors(j, true);
-					A_jj = laplaceMat->coeff(j, j);
-					A_ij = laplaceMat->coeff(i, j);
-					for (int k = 0; k < neighbors.size(); k++) {
-						A_ik = laplaceMat->coeff(i, neighbors[k]);
-						A_jk = laplaceMat->coeff(j, neighbors[k]);
-						laplaceMat_->coeffRef(i, neighbors[k]) -= A_ij * A_jk / A_jj;
-					}
-					laplaceMat_->coeffRef(i, j) = 0;
+			A_ij = laplaceValues[j];
+			//Find the diagonal on the jth row
+			rowStartIdx_bound = outerValues[innerValues[j]];
+			rowEndIdx_bound = outerValues[innerValues[j] + 1];
+			for (int k = rowStartIdx_bound; k < rowEndIdx_bound; k++) {
+				if (innerValues[k] == innerValues[j]) {
+					A_jj = laplaceValues[k];
+					break;
 				}
+			}
+
+		}
+			
+	}
+}
+void Grid::modify_coeff_neumann(std::string coarse) {
+
+	for (size_t i = 0; i < boundaries_.size(); i++) {
+		if ((boundaries_[i]).type == 2) {
+			for (size_t j = 0; j < (boundaries_[i].bcPoints).size(); j++) {
+				source_(boundaries_[i].bcPoints.at(j)) = boundaries_[i].values.at(j);
 			}
 		}
 	}
-	*/
-	for (int i = 0; i < source_.rows() - 1; i++) {
-		if (bcFlags_[i] == 2) {
-			source_(i) = 0;
-		}
-	}
-	laplaceMat_->makeCompressed();
+	source_.coeffRef(source_.rows() - 1) = 0;
 }
 void Grid::bound_eval_neumann() {
 	const double* laplaceValues = laplaceMat_->valuePtr();
@@ -104,7 +121,7 @@ void Grid::bound_eval_neumann() {
 				curr = boundaries_[i].bcPoints[j];
 				rowStart = outerValues[curr];
 				rowEnd = outerValues[curr + 1];
-				boundValue = 0;
+				boundValue = boundaries_[i].values[j];
 				for (int k = rowStart; k < rowEnd; k++) {
 					if (innerValues[k] == curr) {
 						diag = laplaceValues[k];
@@ -176,6 +193,13 @@ void Grid::print_bc_values(Eigen::VectorXd vec) {
 			for (size_t j = 0; j < (boundaries_[i].bcPoints).size(); j++) {
 				cout << "bc value: " << vec.coeff(boundaries_[i].bcPoints.at(j)) << endl;
 			}
+		}
+	}
+}
+void Grid::print_bc_values() {
+	for (size_t i = 0; i < boundaries_.size(); i++) {
+		for (size_t j = 0; j < (boundaries_[i].bcPoints).size(); j++) {
+			cout << "bc value: " << boundaries_[i].values.at(j) << endl;
 		}
 	}
 }
@@ -428,9 +452,44 @@ std::pair<Eigen::VectorXd, vector<int>> Grid::laplaceWeights(int pointID) {
 	}
 	return std::pair<Eigen::VectorXd, vector<int>>(weights, neighbors);
 }
+void Grid::fix_bounds_conn(std::vector<std::pair<int, int>>& ptsConn) {
+	int start_bc_point, curr_bc_point, next_bc_point, temp;
+	for (size_t b = 0; b < boundaries_.size(); b++) {
+		start_bc_point = boundaries_[b].bcPoints[0];
+		curr_bc_point = start_bc_point;
+		do {
+			next_bc_point = ptsConn[curr_bc_point].first;
+
+			if (ptsConn[next_bc_point].second != curr_bc_point) {
+				temp = ptsConn[next_bc_point].first;
+				ptsConn[next_bc_point].first = ptsConn[next_bc_point].second;
+				ptsConn[next_bc_point].second = temp;
+			}
+			curr_bc_point = next_bc_point;
+		} while (curr_bc_point != start_bc_point);
+	}
+}
+void Grid::build_normal_vecs(const char* filename) {
+	normalVecs_ = vector<Point>(points_.size(), std::make_tuple(0, 0, 0));
+	Point conn_vec, norm;
+	vector<std::pair<int, int>> ptsConn = boundPtsConnFromMsh(filename, bcFlags_);
+	fix_bounds_conn(ptsConn);
+	int start_bc_point, curr_bc_point;
+	for (size_t b = 0; b < boundaries_.size(); b++) {
+		start_bc_point = boundaries_[b].bcPoints[0];
+		curr_bc_point = start_bc_point;
+		do {
+			conn_vec = vec_from_pts(points_[ptsConn[curr_bc_point].first], points_[ptsConn[curr_bc_point].second]);
+			norm = unit_normal_vec(conn_vec, true);
+			normalVecs_[curr_bc_point] = norm;
+			//cout << "norm: " << std::get<0>(norm) << " " << std::get<1>(norm) << endl;
+			curr_bc_point = ptsConn[curr_bc_point].first;
+		} while (curr_bc_point != start_bc_point);
+	}
+}
 
 void Grid::build_deriv_normal_bound() {
-	double x, y;
+	double x, y, xWeight, yWeight;
 	std::pair<Eigen::VectorXd, vector<int>> coeffs;
 	int currPoint;
 	deriv_normal_coeffs_ = vector<deriv_normal_bc>();
@@ -442,22 +501,12 @@ void Grid::build_deriv_normal_bound() {
 				currPoint = boundaries_[i].bcPoints[j];
 				x = std::get<0>(points_[currPoint]);
 				y = std::get<1>(points_[currPoint]);
-				if ((x == 0 && y == 0) || (x == 1 && y == 1)) {
-					coeffs = derivx_weights(currPoint);
-					coeffs.first *= root2;
-					coeffs.first += root2 * derivy_weights(currPoint).first;
-				}
-				else if ((x == 0 && y == 1) || (x == 1 && y == 0)){
-					coeffs = derivx_weights(currPoint);
-					coeffs.first *= root2;
-					coeffs.first -= root2 * derivy_weights(currPoint).first;
-				}
-				else if (x == 0 || x == 1) {
-					coeffs = derivx_weights(currPoint);
-				}
-				else if (y == 0 || y == 1) {
-					coeffs = derivy_weights(currPoint);
-				}
+				xWeight = std::get<0>(normalVecs_[currPoint]);
+				yWeight = std::get<1>(normalVecs_[currPoint]);
+				coeffs = derivx_weights(currPoint);
+				coeffs.first *= xWeight;
+				coeffs.first += yWeight * derivy_weights(currPoint).first;
+				
 				bound.pointID = currPoint;
 				bound.value = boundaries_[i].values[j];
 				bound.weights = coeffs.first;
@@ -539,7 +588,6 @@ void Grid::build_laplacian() {
 			//find diag
 			for (int k = rowStartIdx_bound; k < rowEndIdx_bound; k++) {
 				if (innerValues[j] == innerValues[k]) {
-					//cout << "found" << endl;
 					A_jj = laplaceValues[k];
 					break;
 				}
@@ -547,7 +595,6 @@ void Grid::build_laplacian() {
 			
 			for (int k = rowStartIdx_bound; k < rowEndIdx_bound; k++) {
 				A_ik = tempRowValues[innerValues[k]];
-				//cout << A_ik << endl;
 				A_jk = laplaceValues[k];
 				//When you assign 2 values to duplicate i,j indices, setFromTriplets SUMS all of the entries.
 				//So I really don't even need A_ik.
@@ -631,6 +678,7 @@ void Grid::rcm_order_points() {
 	reverse_cuthill_mckee_ordering(adjacency, order);
 	
 	vector<Point> newPoints = points_;
+	vector<Point> newNormVecs = normalVecs_;
 	Eigen::VectorXd newSource = source_;
 	vector<int> newBCFlag = bcFlags_;
 	vector<int> oldToRCMPtrs(points_.size());
@@ -639,11 +687,13 @@ void Grid::rcm_order_points() {
 		newPoints[i] = points_[order[i]];
 		newBCFlag[i] = bcFlags_[order[i]];
 		newSource(i) = source_.coeff(order[i]);
+		newNormVecs[i] = normalVecs_[order[i]];
 		oldToRCMPtrs[order[i]] = i;
 	}
 	points_ = newPoints;
 	source_ = newSource;
 	bcFlags_ = newBCFlag;
+	normalVecs_ = newNormVecs;
 
 	vector<int> newBCPoints;
 	vector<double> newBCVals;

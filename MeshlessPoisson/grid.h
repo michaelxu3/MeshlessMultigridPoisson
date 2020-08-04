@@ -10,8 +10,8 @@
 #include <iostream>
 #include <algorithm>
 #include <queue>
+#include <unordered_map>
 #include <time.h>
-#include <unordered_map>  
 
 typedef std::tuple<double, double, double> Point;
 using std::vector;
@@ -23,9 +23,10 @@ public:
 	Eigen::VectorXd source_;
 	vector<Point> points_;
 	vector<Boundary> boundaries_;
-	//first = bc point id, second = weights, third = corresponding neighbors.
+	std::vector<Point> normalVecs_;
 	vector<deriv_normal_bc> deriv_normal_coeffs_;
 	GridProperties properties_;
+	vector<std::pair<int, int>> ptsConn_;
 	int laplaceMatSize_;
 	Eigen::SparseMatrix<double, Eigen::RowMajor>* laplaceMat_;
 	vector<int> bcFlags_;
@@ -39,13 +40,16 @@ public:
 	void boundaryOp(std::string coarse);
 	void setBCFlag(int boundary, std::string type, vector<double> boundValue);
 	void build_laplacian();
+	void build_normal_vecs(const char* filename);
+	void fix_bounds_conn(std::vector<std::pair<int, int>>& ptsConn);
 	void build_deriv_normal_bound();
 	void sor(Eigen::SparseMatrix<double, 1>* matrix, Eigen::VectorXd* values, Eigen::VectorXd* rhs);
-
 	void setNeumannFlag();
-	void modify_coeff_neumann();
+	void modify_coeff_neumann(std::string coarse);
+	void modify_source_inhomogen_neumann();
 	void bound_eval_neumann();
 	void fix_vector_bound_coarse (Eigen::VectorXd* vec);
+	void print_bc_values();
 	void print_bc_values(Eigen::VectorXd vec);
 	void print_check_bc_normal_derivs();
 

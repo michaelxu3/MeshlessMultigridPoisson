@@ -47,13 +47,14 @@ void Multigrid::buildRestrictionMatrices() {
 void Multigrid::buildMatrices() {
 	buildProlongMatrices();
 	buildRestrictionMatrices();
-	/*
 	Grid* currGrid;
+	//set coarse source coeffs back to 0
 	for (size_t i = 0; i < grids_.size() - 1; i++) {
 		currGrid = grids_[i].second;
-		currGrid->diagonal_scaling(currGrid->laplaceMat_, &currGrid->source_);
+		if (i != grids_.size() - 1) {
+			currGrid->modify_coeff_neumann("coarse");
+		}
 	}
-	*/
 }
 
 void Multigrid::vCycle() {

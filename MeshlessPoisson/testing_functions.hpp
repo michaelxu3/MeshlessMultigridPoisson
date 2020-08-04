@@ -18,19 +18,19 @@ public:
 	vector<GridProperties> props;
 	string extension;
 	string directory;
+	string geomtype;
 	bool neumann;
 	int k1;
 	int k2;
 	int num_v_cycle;
 };
 double calc_l1_error(Grid* grid, bool neumannFlag, int k1, int k2);
-Grid* genGmshGridDirichlet(const char* filename, GridProperties props, std::string filetype, int k1, int k2);
-Grid* genGmshGridNeumann(const char* filename, GridProperties props, std::string filetype, int k1, int k2);
+Grid* genGmshGridDirichlet(string geomtype, const char* filename, GridProperties props, std::string filetype, int k1, int k2);
+Grid* genGmshGridNeumann(string geomtype, const char* filename, GridProperties props, std::string filetype, int k1, int k2);
 void write_temp_contour (Grid* grid, string directory, std::string extension);
 void write_mg_resid(Multigrid& mg, string directory, string extension);
 void run_mg_sim(MultigridParameters params);
 MultigridParameters gen_mg_param(string geom, int numGrids, int k, int poly_deg, int vcyc, bool neumann);
 void run_tests();
 void testGmshSingleGrid();
-
 #endif
