@@ -525,7 +525,7 @@ void Grid::build_laplacian() {
 			}
 		}
 	}
-	//Add neumann boundary rows: d/dn = 0
+	//Add neumann boundary rows: d/dn = rhs
 	deriv_normal_bc bound;
 	if (neumannFlag_) {
 		for (size_t i = 0; i < deriv_normal_coeffs_.size(); i++) {
@@ -547,48 +547,40 @@ void Grid::build_laplacian() {
 	const int* innerValues = laplaceMat_->innerIndexPtr();
 	const int* outerValues = laplaceMat_->outerIndexPtr();
 	int outerIdx_int, rowStartIdx_int, rowEndIdx_int, 
-		outerIdx_bound, rowStartIdx_bound, rowEndIdx_bound;
-	double A_ij, A_jj, A_ik, A_jk, A_ij_mod, newValue;
+		outerIdx_bound, rowStartIdx_bound, rowEndIdx_bound, j_col;
+	double A_ij, A_jj, A_ik, A_jk, newValue;
 	outerIdx_int = 0;
 	//stores nonzero entries on current row only.
-	vector<double> tempRowValues;
+	vector<std::pair<int, double>> tempRowValuesInt, tempRowValuesBound;
 	for (int i = 0; i < laplaceMat_->rows() - 1; i++) {
 		if (bcFlags_[i] != 0) {
 			outerIdx_int++;
 			continue;
 		}
-		tempRowValues = vector<double>(laplaceMat_->rows(), 0);
 		rowStartIdx_int = outerValues[outerIdx_int];
 		rowEndIdx_int = outerValues[outerIdx_int + 1];
-		//Modify the approriate coeffs for every boundary point in stencil.
+		tempRowValuesInt.clear();
+		//Iterate over row I to find all boundary points J.
 		for (int j = rowStartIdx_int; j < rowEndIdx_int; j++) {
-			if (innerValues[j] == laplaceMat_->rows() - 1 || bcFlags_[innerValues[j]] != 2) {
-				continue;
+			if (innerValues[j] != laplaceMat_->rows()-1 && bcFlags_[innerValues[j]] == 2) {
+				tempRowValuesInt.push_back(std::make_pair(innerValues[j], laplaceValues[j]));
 			}
-			//Fill up tempRowValues
-			for (int j1 = rowStartIdx_int; j1 < rowEndIdx_int; j1++) {
-				tempRowValues[innerValues[j1]] = laplaceValues[j1];
-			}
-			outerIdx_bound = innerValues[j];
+		}
+
+		//iterate over every boundary point J.
+		for (size_t j = 0; j < tempRowValuesInt.size(); j++) {
+			//want to now add all stencil points in the row J.
+			j_col = tempRowValuesInt[j].first;
+			outerIdx_bound = j_col;
 			rowStartIdx_bound = outerValues[outerIdx_bound];
 			rowEndIdx_bound = outerValues[outerIdx_bound + 1];
-
-			A_ij = laplaceValues[j];
-			A_jj = diags.coeff(innerValues[j]);
+			//Iterate over all of the stencil of boundary point J, A_jk.
 			for (int k = rowStartIdx_bound; k < rowEndIdx_bound; k++) {
-				A_ik = tempRowValues[innerValues[k]];
 				A_jk = laplaceValues[k];
-				//When you assign 2 values to duplicate i,j indices, setFromTriplets SUMS all of the entries.
-				//So I really don't even need A_ik.
-				newValue = - A_ij * A_jk / A_jj;
-				if (A_jj == A_jk) {
-					A_ij_mod = A_ij + newValue;
-				}
-				tripletList.push_back(Eigen::Triplet<double>(i, innerValues[k], -newValue));
+				tripletList.push_back(Eigen::Triplet<double>(i, innerValues[k], A_jk*A_ij/A_jj));
 			}
-			//Sets A_ij to zero by exploiting setFromTriplets behavior.
-			tripletList.push_back(Eigen::Triplet<double>(i, innerValues[j], -A_ij));
-			
+			//Decouple Boundary
+			tripletList.push_back(Eigen::Triplet<double>(i, j_col, -A_ij ));
 		}
 		outerIdx_int++;
 	}

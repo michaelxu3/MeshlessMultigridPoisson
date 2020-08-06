@@ -189,7 +189,7 @@ Grid* genGmshGridNeumann(string geomtype, const char* filename, GridProperties p
 	grid->rcm_order_points();
 	grid->build_deriv_normal_bound();
 	grid->build_laplacian();
-	grid->push_inhomog_to_rhs();
+	//grid->push_inhomog_to_rhs();
 	return grid;
 }
 void write_temp_contour(Grid* testGrid, string directory, string extension) {
@@ -309,13 +309,13 @@ void testGmshSingleGrid() {
 	props.rbfExp = 3;
 	props.stencilSize = (int)(1.5 * (props.polyDeg + 1) * (props.polyDeg + 2) / 2);
 	
-	Grid* testGrid = genGmshGridNeumann("square_with_circle", "square_hole_geoms/square_hole_10197.msh", props, "msh", 1, 1);
-	//Grid* testGrid = genGmshGridNeumann("square", "square_test_geometries/square_10k.msh", props, "msh", 1, 1);
+	//Grid* testGrid = genGmshGridNeumann("square_with_circle", "square_hole_geoms/square_hole_10197.msh", props, "msh", 1, 1);
+	Grid* testGrid = genGmshGridNeumann("square", "square_test_geometries/square_10k.msh", props, "msh", 1, 1);
 	//Grid* testGrid = genGmshGridDirichlet("concentric_circles", "concentric_circle_geoms/concentric_circles_10207.msh", props, "msh", 1, 1);
 	
 	vector<double> res;
 	testGrid->boundaryOp("fine");
-	for (int i = 0; i < 10000; i++) {
+	for (int i = 0; i < 4000; i++) {
 		cout << "residual: " << testGrid->residual().lpNorm<1>() / testGrid->source_.lpNorm<1>() << endl;
 		res.push_back(testGrid->residual().lpNorm<1>() / testGrid->source_.lpNorm<1>());
 		testGrid->sor(testGrid->laplaceMat_, testGrid->values_, &testGrid->source_);
