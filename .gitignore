@@ -49,3 +49,4 @@ comp_exec_UQ.sh
 /MeshlessPoisson/MeshlessMultigridPoisson/matplotlibcpp.h
 /MeshlessPoisson/MeshlessMultigridPoisson/resplot.py
 *.py
+*.xlsx

@@ -127,7 +127,8 @@ void Grid::sor(Eigen::SparseMatrix<double, Eigen::RowMajor>* matrix, Eigen::Vect
 					diagCoeff = laplaceValues[j];
 					continue;
 				}
-				
+
+
 				inner = innerValues[j];
 				x_i -= laplaceValues[j] * values->coeff(inner);
 			}
@@ -147,8 +148,8 @@ Eigen::VectorXd Grid::residual() {
 	return res;
 }
 double Grid::cond_L() {
-	Eigen::MatrixXd mat = laplaceMat_->toDense();
-	return mat.lpNorm<1>() * mat.inverse().lpNorm<1>();
+	double cond = 1.0 / laplaceMat_->toDense().partialPivLu().rcond();
+	return cond;
 }
 void Grid::print_bc_values(Eigen::VectorXd vec) {
 	for (size_t i = 0; i < boundaries_.size(); i++) {
@@ -433,7 +434,26 @@ void Grid::fix_bounds_conn(std::vector<std::pair<int, int>>& ptsConn) {
 	}
 }
 void Grid::build_normal_vecs(const char* filename, std::string geomtype) {
-	
+	Point curr;
+	double x, y, normPoint;
+	for (size_t b = 0; b < boundaries_[0].bcPoints.size(); b++) {
+		curr = points_[boundaries_[0].bcPoints[b]];
+		x = std::get<0>(curr);
+		y = std::get<1>(curr);
+		if (y == 0) {
+			normalVecs_[boundaries_[0].bcPoints[b]] = std::make_tuple(0, 1, 0);
+		}
+		else if (y == 1) {
+			normalVecs_[boundaries_[0].bcPoints[b]] = std::make_tuple(0, -1, 0);
+		}
+		else if (x == 0) {
+			normalVecs_[boundaries_[0].bcPoints[b]] = std::make_tuple(1,0, 0);
+		}
+		else if (x == 1) {
+			normalVecs_[boundaries_[0].bcPoints[b]] = std::make_tuple(-1, 0, 0);
+		}
+	}
+	/*
 	normalVecs_ = vector<Point>(points_.size(), std::make_tuple(0, 0, 0));
 	Point conn_vec, norm;
 	vector<std::pair<int, int>> ptsConn = boundPtsConnFromMsh(filename, bcFlags_);
@@ -450,9 +470,7 @@ void Grid::build_normal_vecs(const char* filename, std::string geomtype) {
 			curr_bc_point = ptsConn[curr_bc_point].first;
 		} while (curr_bc_point != start_bc_point);
 	}
-	
-	Point curr;
-	double x, y, normPoint;
+	*/
 	if (geomtype.compare("square_with_circle") == 0) {
 		for (size_t b = 0; b < boundaries_[1].bcPoints.size(); b++) {
 			curr = points_[boundaries_[1].bcPoints[b]];
@@ -466,6 +484,7 @@ void Grid::build_normal_vecs(const char* filename, std::string geomtype) {
 			normalVecs_[boundaries_[1].bcPoints[b]] = std::make_tuple(x, y, 0);
 		}
 	}
+	
 }
 
 void Grid::build_deriv_normal_bound() {
@@ -548,7 +567,7 @@ void Grid::build_laplacian() {
 	const int* outerValues = laplaceMat_->outerIndexPtr();
 	int outerIdx_int, rowStartIdx_int, rowEndIdx_int, 
 		outerIdx_bound, rowStartIdx_bound, rowEndIdx_bound, j_col;
-	double A_ij, A_jj, A_ik, A_jk, newValue;
+	double A_ij, A_jj, A_ik, A_jk, A_ij_mod;
 	outerIdx_int = 0;
 	//stores nonzero entries on current row only.
 	vector<std::pair<int, double>> tempRowValuesInt, tempRowValuesBound;
@@ -568,19 +587,35 @@ void Grid::build_laplacian() {
 		}
 
 		//iterate over every boundary point J.
-		for (size_t j = 0; j < tempRowValuesInt.size(); j++) {
+		for (int j = 0; j < tempRowValuesInt.size(); j++) {
 			//want to now add all stencil points in the row J.
 			j_col = tempRowValuesInt[j].first;
 			outerIdx_bound = j_col;
+			A_ij = tempRowValuesInt[j].second;
+			A_ij_mod = A_ij;
+
 			rowStartIdx_bound = outerValues[outerIdx_bound];
 			rowEndIdx_bound = outerValues[outerIdx_bound + 1];
+			for (int k = rowStartIdx_bound; k < rowEndIdx_bound; k++) {
+				if (innerValues[k] == j_col) {
+					A_jj = laplaceValues[k];
+					break;
+				}
+			}
+			
 			//Iterate over all of the stencil of boundary point J, A_jk.
+			//We are iterating over the correct points, I did bcflag check.
 			for (int k = rowStartIdx_bound; k < rowEndIdx_bound; k++) {
 				A_jk = laplaceValues[k];
-				tripletList.push_back(Eigen::Triplet<double>(i, innerValues[k], A_jk*A_ij/A_jj));
+				if (j_col == innerValues[k]) {
+					//A_ij_mod -= A_jk * A_ij / A_jj;
+					continue;
+				}
+				tripletList.push_back(Eigen::Triplet<double>(i, innerValues[k], -A_jk*A_ij/A_jj));
 			}
 			//Decouple Boundary
-			tripletList.push_back(Eigen::Triplet<double>(i, j_col, -A_ij ));
+			tripletList.push_back(Eigen::Triplet<double>(i, j_col, -A_ij));
+			//cout << "bcI: " << bcFlags_[i] << "bcJ: " << bcFlags_[j_col] << "coeff: " << laplaceMat_->coeff(i, j_col) - A_ij << endl;
 		}
 		outerIdx_int++;
 	}
@@ -602,10 +637,9 @@ void Grid::push_inhomog_to_rhs() {
 		}
 		for (int j = outerValues[i]; j < outerValues[i+ 1]; j++) {
 			diag = diags.coeff(innerValues[j]);
-			A_ij = laplaceValues_bound[j];
-			//cout << A_ij << endl;
-			//cout << laplaceMat_->coeff(i, innerValues[j]) << endl;
-			source_(innerValues[j]) -= A_ij * source_.coeff(innerValues[j]) / diag;
+			//A_ij = laplaceValues_bound[j];
+			cout << bcFlags_[i]<<bcFlags_[innerValues[j]] << laplaceMat_->coeff(i,innerValues[j]) << endl;
+			//source_(innerValues[j]) -= A_ij * source_.coeff(innerValues[j]) / diag;
 		}
 	}
 
