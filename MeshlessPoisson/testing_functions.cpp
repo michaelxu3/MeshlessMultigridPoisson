@@ -346,7 +346,7 @@ MultigridParameters gen_mg_param(string geom, int numGrids, int k, int poly_deg,
 	return params;
 }
 void run_tests() {
-	
+	/*
 	vector<MultigridParameters> params;
 	for (int grids = 2; grids <= 5; grids++) {
 		for (int k = 1; k <= 4; k++) {
@@ -359,22 +359,23 @@ void run_tests() {
 	for (int i = 0; i < params.size(); i++) {
 		run_mg_sim(params[i]);
 	}
-	//MultigridParameters param = gen_mg_param("square_with_circle", 5, 1, 5, 150, false);
-	//run_mg_sim(param);
+	*/
+	MultigridParameters param = gen_mg_param("square", 5, 1, 5, 150, true);
+	run_mg_sim(param);
 }
 
 void testGmshSingleGrid() {
 	GridProperties props;
 	
 	props.iters = 5;
-	props.polyDeg = 5;
-	props.omega = 1.2;
+	props.polyDeg = 6;
+	props.omega = 1.4;
 	props.rbfExp = 3;
-	props.stencilSize = (int)(1.5 * (props.polyDeg + 1) * (props.polyDeg + 2) / 2);
+	props.stencilSize = (int)(2.5 * (props.polyDeg + 1) * (props.polyDeg + 2) / 2);
 	
 	//Grid* testGrid = genGmshGridNeumann("square_with_circle", "square_hole_geoms/square_hole_10197.msh", props, "msh", 1, 1);
-	//Grid* testGrid = genGmshGridNeumann("square", "square_test_geometries/square_10k.msh", props, "msh", 1, 1);
-	Grid* testGrid = genGmshGridDirichlet("concentric_circles", "concentric_circle_geoms/concentric_circles_10207.msh", props, "msh", 1, 1);
+	Grid* testGrid = genGmshGridNeumann("square", "square_test_geometries/square_10k.msh", props, "msh", 1, 1);
+	//Grid* testGrid = genGmshGridDirichlet("concentric_circles", "concentric_circle_geoms/concentric_circles_10207.msh", props, "msh", 1, 1);
 	
 	vector<double> res;
 	testGrid->boundaryOp("fine");
@@ -385,8 +386,8 @@ void testGmshSingleGrid() {
 	}
 	testGrid->bound_eval_neumann();
 	writeVectorToTxt(res, "residual.txt");
-	//cout << "L1 error: " << calc_l1_error(testGrid, testGrid->neumannFlag_, 1, 1) << endl;
-	cout << "L1 error: " << calc_l1_error_circle(testGrid, testGrid->neumannFlag_) << endl;
+	cout << "L1 error: " << calc_l1_error(testGrid, testGrid->neumannFlag_, 1, 1) << endl;
+	//cout << "L1 error: " << calc_l1_error_circle(testGrid, testGrid->neumannFlag_) << endl;
 
 	//band matrix plotting.
 	

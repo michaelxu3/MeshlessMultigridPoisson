@@ -596,6 +596,7 @@ void Grid::build_laplacian() {
 
 			rowStartIdx_bound = outerValues[outerIdx_bound];
 			rowEndIdx_bound = outerValues[outerIdx_bound + 1];
+			//find diagonal
 			for (int k = rowStartIdx_bound; k < rowEndIdx_bound; k++) {
 				if (innerValues[k] == j_col) {
 					A_jj = laplaceValues[k];
