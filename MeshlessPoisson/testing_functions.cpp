@@ -160,7 +160,7 @@ Grid* genGmshGridDirichlet(string geomtype, const char* filename, GridProperties
 	return grid;
 }
 
-Grid* genGmshGridNeumann(string geomtype, const char* filename, GridProperties props, std::string filetype, int k1, int k2) {
+Grid* genGmshGridNeumann(string geomtype, const char* filename, GridProperties props, std::string filetype, int k1, int k2, std::string coarse) {
 	vector<std::tuple<double, double, double>> points;
 	if (filetype.compare("txt") == 0) {
 		points = pointsFromTxts(filename);
@@ -202,8 +202,9 @@ Grid* genGmshGridNeumann(string geomtype, const char* filename, GridProperties p
 				normX /= norm;
 				normY /= norm;
 				bPts_inner.push_back(i);
-				bValues_inner.push_back(-normX*k1*std::sin(k1*pi*x)*std::cos(k2*pi*y)
-										-normY*k2*std::cos(k1*pi*x)*std::sin(k2*pi*y));
+				bValues_inner.push_back(-normX*pi*k1*std::sin(k1*pi*x)*std::cos(k2*pi*y)
+										-normY*pi*k2*std::cos(k1*pi*x)*std::sin(k2*pi*y));
+
 			}
 		}
 	}
@@ -230,12 +231,14 @@ Grid* genGmshGridNeumann(string geomtype, const char* filename, GridProperties p
 
 	}
 	//grid->print_bc_values();
-	grid->modify_coeff_neumann("fine");
 	grid->build_normal_vecs(filename, geomtype);
 	grid->rcm_order_points();
 	grid->build_deriv_normal_bound();
 	grid->build_laplacian();
-	//grid->push_inhomog_to_rhs();
+	grid->modify_coeff_neumann(coarse);
+
+	grid->push_inhomog_to_rhs();	 
+
 	return grid;
 }
 void write_temp_contour(Grid* testGrid, string directory, string extension) {
@@ -283,7 +286,8 @@ void run_mg_sim(MultigridParameters params){
 	Multigrid mg;
 	for (int i = 0; i < (int)(params.filenames.size()); i++) {
 		if (params.neumann == true) {
-			mg.addGrid(genGmshGridNeumann(params.geomtype, (params.directory + params.filenames[i]).c_str(), params.props[i], params.filetypes[i], params.k1, params.k2));
+			std::string coarse = (i == params.filenames.size()-1) ? "fine" : "coarse";
+			mg.addGrid(genGmshGridNeumann(params.geomtype, (params.directory + params.filenames[i]).c_str(), params.props[i], params.filetypes[i], params.k1, params.k2, coarse));
 		}
 		else {
 			mg.addGrid(genGmshGridDirichlet(params.geomtype, (params.directory + params.filenames[i]).c_str(), params.props[i], params.filetypes[i], params.k1, params.k2));
@@ -309,7 +313,7 @@ MultigridParameters gen_mg_param(string geom, int numGrids, int k, int poly_deg,
 		dir = "square_test_geometries/";
 	}
 	else if (geom.compare("square_with_circle") == 0) {
-		msh_files = {"square_hole_44.msh",  "square_hole_176.msh", "square_hole_640.msh", "square_hole_2532.msh", "square_hole_10197.msh" };
+		msh_files = {"square_hole_176.msh", "square_hole_640.msh", "square_hole_2532.msh", "square_hole_10197.msh" };
 		dir = "square_hole_geoms/";
 	}
 	else if (geom.compare("concentric_circles") == 0) {
@@ -328,7 +332,8 @@ MultigridParameters gen_mg_param(string geom, int numGrids, int k, int poly_deg,
 		props[i].polyDeg = (i == numGrids - 1) ? poly_deg : 3;
 		props[i].omega = 1.4;
 		props[i].rbfExp = 3;
-		props[i].stencilSize = (int)(1.5 * (props[i].polyDeg + 1) * (props[i].polyDeg + 2) / 2);
+		props[i].stencilSize = (i == 0)? (int)(2.5* (props[i].polyDeg + 1) * (props[i].polyDeg + 2) / 2)
+			: (int)(2.5 * (props[i].polyDeg + 1) * (props[i].polyDeg + 2) / 2);
 	}
 	string bctype = (neumann) ? "neumann" : "dirichlet";
 	MultigridParameters params;
@@ -360,7 +365,7 @@ void run_tests() {
 		run_mg_sim(params[i]);
 	}
 	*/
-	MultigridParameters param = gen_mg_param("square", 5, 1, 5, 150, true);
+	MultigridParameters param = gen_mg_param("square_with_circle", 4, 1, 6, 150, true);
 	run_mg_sim(param);
 }
 
@@ -368,18 +373,18 @@ void testGmshSingleGrid() {
 	GridProperties props;
 	
 	props.iters = 5;
-	props.polyDeg = 6;
+	props.polyDeg = 5;
 	props.omega = 1.4;
 	props.rbfExp = 3;
 	props.stencilSize = (int)(2.5 * (props.polyDeg + 1) * (props.polyDeg + 2) / 2);
 	
-	//Grid* testGrid = genGmshGridNeumann("square_with_circle", "square_hole_geoms/square_hole_10197.msh", props, "msh", 1, 1);
-	Grid* testGrid = genGmshGridNeumann("square", "square_test_geometries/square_10k.msh", props, "msh", 1, 1);
+	Grid* testGrid = genGmshGridNeumann("square_with_circle", "square_hole_geoms/square_hole_10197.msh", props, "msh", 1, 1, "fine");
+	//Grid* testGrid = genGmshGridNeumann("square", "square_test_geometries/square_10k.msh", props, "msh", 1, 1);
 	//Grid* testGrid = genGmshGridDirichlet("concentric_circles", "concentric_circle_geoms/concentric_circles_10207.msh", props, "msh", 1, 1);
 	
 	vector<double> res;
 	testGrid->boundaryOp("fine");
-	for (int i = 0; i < 10000; i++) {
+	for (int i = 0; i < 13000; i++) {
 		cout << "residual: " << testGrid->residual().lpNorm<1>() / testGrid->source_.lpNorm<1>() << endl;
 		res.push_back(testGrid->residual().lpNorm<1>() / testGrid->source_.lpNorm<1>());
 		testGrid->sor(testGrid->laplaceMat_, testGrid->values_, &testGrid->source_);

@@ -25,9 +25,9 @@ public:
 	int num_v_cycle;
 };
 double calc_l1_error(Grid* grid, bool neumannFlag, int k1, int k2);
-double calc_l1_error_circle(Grid* grid, bool neumannFlag);
+double calc_l1_error_circle(Grid* grid, bool neumannFlag, int k);
 Grid* genGmshGridDirichlet(string geomtype, const char* filename, GridProperties props, std::string filetype, int k1, int k2);
-Grid* genGmshGridNeumann(string geomtype, const char* filename, GridProperties props, std::string filetype, int k1, int k2);
+Grid* genGmshGridNeumann(string geomtype, const char* filename, GridProperties props, std::string filetype, int k1, int k2, std::string coarse);
 void write_temp_contour (Grid* grid, string directory, std::string extension);
 void write_mg_resid(Multigrid& mg, string directory, string extension);
 void write_l1error_cond(Multigrid& mg, MultigridParameters params, string directory, string extension, double time);

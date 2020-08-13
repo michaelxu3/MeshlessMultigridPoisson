@@ -64,7 +64,7 @@ void Grid::modify_coeff_neumann(std::string coarse) {
 	for (size_t i = 0; i < boundaries_.size(); i++) {
 		if ((boundaries_[i]).type == 2) {
 			for (size_t j = 0; j < (boundaries_[i].bcPoints).size(); j++) {
-				source_(boundaries_[i].bcPoints.at(j)) = boundaries_[i].values.at(j);
+				source_(boundaries_[i].bcPoints.at(j)) = coarse.compare("coarse") == 0? 0 : boundaries_[i].values.at(j);
 			}
 		}
 	}
@@ -82,9 +82,11 @@ void Grid::bound_eval_neumann() {
 		if ((boundaries_[i]).type == 2) {
 			for (size_t j = 0; j < (boundaries_[i].bcPoints).size(); j++) {
 				curr = boundaries_[i].bcPoints[j];
+				//values_->coeffRef(curr) = std::cos(pi*std::get<0>(points_[curr]))*std::cos(pi*std::get<1>(points_[curr]));
+				
 				rowStart = outerValues[curr];
 				rowEnd = outerValues[curr + 1];
-				boundValue = boundaries_[i].values[j];
+				boundValue = source_.coeff(curr);
 				for (int k = rowStart; k < rowEnd; k++) {
 					if (innerValues[k] == curr) {
 						diag = laplaceValues[k];
@@ -551,6 +553,9 @@ void Grid::build_laplacian() {
 			bound = deriv_normal_coeffs_[i];
 			for (size_t j = 0; j < bound.neighbors.size(); j++) {
 				tripletList.push_back(Eigen::Triplet<double>(bound.pointID, bound.neighbors[j], bound.weights.coeff(j)));
+				if (bound.pointID == bound.neighbors[j]) {
+					diags.coeffRef(bound.pointID) = bound.weights.coeff(j);
+				}
 			}
 		}
 	}
@@ -597,13 +602,15 @@ void Grid::build_laplacian() {
 			rowStartIdx_bound = outerValues[outerIdx_bound];
 			rowEndIdx_bound = outerValues[outerIdx_bound + 1];
 			//find diagonal
+			/*
 			for (int k = rowStartIdx_bound; k < rowEndIdx_bound; k++) {
 				if (innerValues[k] == j_col) {
 					A_jj = laplaceValues[k];
 					break;
 				}
 			}
-			
+			*/
+			A_jj = diags.coeff(j_col);
 			//Iterate over all of the stencil of boundary point J, A_jk.
 			//We are iterating over the correct points, I did bcflag check.
 			for (int k = rowStartIdx_bound; k < rowEndIdx_bound; k++) {
@@ -627,10 +634,13 @@ void Grid::build_laplacian() {
 	
 }
 void Grid::push_inhomog_to_rhs() {
+	if (!implicitFlag_) {
+		return;
+	}
 	double* laplaceValues_bound = neumann_boundary_coeffs_->valuePtr();
 	const int* innerValues = neumann_boundary_coeffs_->innerIndexPtr();
 	const int* outerValues= neumann_boundary_coeffs_->outerIndexPtr();
-	
+	Eigen::VectorXd sourceCopy = source_;
 	double diag, A_ij;
 	for (int i = 0; i < laplaceMatSize_; i++) {
 		if (bcFlags_[i] != 0) {
@@ -638,9 +648,8 @@ void Grid::push_inhomog_to_rhs() {
 		}
 		for (int j = outerValues[i]; j < outerValues[i+ 1]; j++) {
 			diag = diags.coeff(innerValues[j]);
-			//A_ij = laplaceValues_bound[j];
-			cout << bcFlags_[i]<<bcFlags_[innerValues[j]] << laplaceMat_->coeff(i,innerValues[j]) << endl;
-			//source_(innerValues[j]) -= A_ij * source_.coeff(innerValues[j]) / diag;
+			A_ij = laplaceValues_bound[j];
+			source_(i) -= A_ij * sourceCopy.coeff(innerValues[j]) / diag;
 		}
 	}
 

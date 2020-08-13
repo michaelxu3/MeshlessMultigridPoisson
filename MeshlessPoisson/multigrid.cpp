@@ -63,6 +63,7 @@ void Multigrid::vCycle() {
 	currGrid = grids_[grids_.size() - 1].second;
 	double resid_norm = residual();
 	residuals_.push_back(resid_norm);
+	currGrid->bound_eval_neumann();
 	std::cout << std::setprecision(12) << "Residual: " << resid_norm << std::endl;
 	//Restriction
 	for (size_t i = grids_.size() - 1; i > 0; i--) {
@@ -79,6 +80,7 @@ void Multigrid::vCycle() {
 		grids_[i - 1].second->fix_vector_bound_coarse(&grids_[i-1].second->source_);
 		if (currGrid->neumannFlag_) {
 			grids_[i - 1].second->source_.coeffRef(grids_[i-1].second->source_.rows()-1) = 0;
+			grids_[i - 1].second->modify_coeff_neumann("coarse");
 		}
 
 	}
