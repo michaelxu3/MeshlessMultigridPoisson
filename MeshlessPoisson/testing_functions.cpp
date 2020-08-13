@@ -31,7 +31,7 @@ double calc_l1_error(Grid* grid, bool neumannFlag, int k1, int k2) {
 	error /= points.size();
 	return error;
 }
-double calc_l1_error_circle(Grid* grid, bool neumannFlag) {
+double calc_l1_error_circle(Grid* grid, bool neumannFlag, int k) {
 	vector<Point> points = grid->points_;
 	Eigen::VectorXd actual(points.size());
 	double x, y, rstar;
@@ -41,7 +41,7 @@ double calc_l1_error_circle(Grid* grid, bool neumannFlag) {
 		x -= 0.5;
 		y -= 0.5;
 		rstar = (std::sqrt(x*x + y * y) - 0.25) / (0.5-0.25);
-		actual(i) = std::sin(rstar*pi);
+		actual(i) = std::sin(rstar*pi*k);
 	}
 	double solMean = 0;
 	double manufacturedMean = 0;
@@ -114,10 +114,10 @@ Grid* genGmshGridDirichlet(string geomtype, const char* filename, GridProperties
 			double r = std::sqrt(x*x + y * y);
 			double rstar = (r - 0.25) / (0.5 - 0.25);
 			//cout << I << endl;
-			sum += -pi * pi*std::sin(pi*rstar)*std::pow(4 * x*std::pow(x*x + y * y, -0.5), 2)
-				+ pi * std::cos(pi*rstar) * 4 * (std::pow(x*x + y * y, -0.5) + 2 * x*x*-0.5*std::pow(x*x + y * y, -1.5));
-			sum += -pi * pi*std::sin(pi*rstar)*std::pow(4 * y*std::pow(x*x + y * y, -0.5), 2)
-				+ pi * std::cos(pi*rstar) * 4 * (std::pow(x*x + y * y, -0.5) + 2 * y*y*-0.5*std::pow(x*x + y * y, -1.5));
+			sum += -pi * k1*k1*pi*std::sin(pi*k1*rstar)*std::pow(4 * x*std::pow(x*x + y * y, -0.5), 2)
+				+ pi * k1*std::cos(pi*k1*rstar) * 4 * (std::pow(x*x + y * y, -0.5) + 2 * x*x*-0.5*std::pow(x*x + y * y, -1.5));
+			sum += -pi *k1*k1* pi*std::sin(pi*k1*rstar)*std::pow(4 * y*std::pow(x*x + y * y, -0.5), 2)
+				+ pi * k1*std::cos(pi*k1*rstar) * 4 * (std::pow(x*x + y * y, -0.5) + 2 * y*y*-0.5*std::pow(x*x + y * y, -1.5));
 			x += 0.5;
 			y += 0.5;
 			source(i) = sum;
@@ -378,21 +378,21 @@ void testGmshSingleGrid() {
 	props.rbfExp = 3;
 	props.stencilSize = (int)(2.5 * (props.polyDeg + 1) * (props.polyDeg + 2) / 2);
 	
-	Grid* testGrid = genGmshGridNeumann("square_with_circle", "square_hole_geoms/square_hole_10197.msh", props, "msh", 1, 1, "fine");
+	//Grid* testGrid = genGmshGridNeumann("square_with_circle", "square_hole_geoms/square_hole_10197.msh", props, "msh", 1, 1, "fine");
 	//Grid* testGrid = genGmshGridNeumann("square", "square_test_geometries/square_10k.msh", props, "msh", 1, 1);
-	//Grid* testGrid = genGmshGridDirichlet("concentric_circles", "concentric_circle_geoms/concentric_circles_10207.msh", props, "msh", 1, 1);
+	Grid* testGrid = genGmshGridDirichlet("concentric_circles", "concentric_circle_geoms/concentric_circles_10207.msh", props, "msh", 2, 2);
 	
 	vector<double> res;
 	testGrid->boundaryOp("fine");
-	for (int i = 0; i < 13000; i++) {
+	for (int i = 0; i < 2000; i++) {
 		cout << "residual: " << testGrid->residual().lpNorm<1>() / testGrid->source_.lpNorm<1>() << endl;
 		res.push_back(testGrid->residual().lpNorm<1>() / testGrid->source_.lpNorm<1>());
 		testGrid->sor(testGrid->laplaceMat_, testGrid->values_, &testGrid->source_);
 	}
 	testGrid->bound_eval_neumann();
 	writeVectorToTxt(res, "residual.txt");
-	cout << "L1 error: " << calc_l1_error(testGrid, testGrid->neumannFlag_, 1, 1) << endl;
-	//cout << "L1 error: " << calc_l1_error_circle(testGrid, testGrid->neumannFlag_) << endl;
+	//cout << "L1 error: " << calc_l1_error(testGrid, testGrid->neumannFlag_, 1, 1) << endl;
+	cout << "L1 error: " << calc_l1_error_circle(testGrid, testGrid->neumannFlag_, 2) << endl;
 
 	//band matrix plotting.
 	
