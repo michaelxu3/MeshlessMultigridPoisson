@@ -486,7 +486,7 @@ void Grid::build_normal_vecs(const char* filename, std::string geomtype) {
 			normalVecs_[boundaries_[1].bcPoints[b]] = std::make_tuple(x, y, 0);
 		}
 	}
-	else if (geomtype.compare("concentric_cylinders") == 0) {
+	else if (geomtype.compare("concentric_circles") == 0) {
 		for (size_t b = 0; b < boundaries_[0].bcPoints.size(); b++) {
 			curr = points_[boundaries_[0].bcPoints[b]];
 			x = std::get<0>(curr);

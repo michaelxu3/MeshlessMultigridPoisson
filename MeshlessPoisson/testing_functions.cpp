@@ -208,6 +208,50 @@ Grid* genGmshGridNeumann(string geomtype, const char* filename, GridProperties p
 			}
 		}
 	}
+	else if (geomtype.compare("concentric_circles") == 0) {
+		for (size_t i = 0; i < points.size(); i++) {
+			x = std::get<0>(points[i]);
+			y = std::get<1>(points[i]);
+			x -= 0.5;
+			y -= 0.5;
+			double sum = 0;
+			double r = std::sqrt(x*x + y * y);
+			double rstar = (r - 0.25) / (0.5 - 0.25);
+			//cout << I << endl;
+			sum += -pi * k1*k1*pi*std::sin(pi*k1*rstar)*std::pow(4 * x*std::pow(x*x + y * y, -0.5), 2)
+				+ pi * k1*std::cos(pi*k1*rstar) * 4 * (std::pow(x*x + y * y, -0.5) + 2 * x*x*-0.5*std::pow(x*x + y * y, -1.5));
+			sum += -pi * k1*k1* pi*std::sin(pi*k1*rstar)*std::pow(4 * y*std::pow(x*x + y * y, -0.5), 2)
+				+ pi * k1*std::cos(pi*k1*rstar) * 4 * (std::pow(x*x + y * y, -0.5) + 2 * y*y*-0.5*std::pow(x*x + y * y, -1.5));
+			x += 0.5;
+			y += 0.5;
+			source(i) = sum;
+			double normX, normY, norm;
+			if (std::abs(0.25 - (x - 0.5)*(x - 0.5) - (y - 0.5)*(y - 0.5)) <= std::pow(10, -10)) {
+				normX = x - 0.5;
+				normY = y - 0.5;
+				norm = std::sqrt(normX*normX + normY * normY);
+				normX /= norm;
+				normY /= norm;
+				bPts.push_back(i);
+				bValues.push_back(-normX* k1*pi*std::cos(k1*pi*rstar) / r * 4 * (x - 0.5)
+					- normY * k1*pi*std::cos(k1*pi*rstar) / r * 4 * (y - 0.5));
+
+			}
+			else if (std::abs(0.0625 - (x - 0.5)*(x - 0.5) - (y - 0.5)*(y - 0.5)) <= std::pow(10, -10)) {
+				normX = x - 0.5;
+				normY = y - 0.5;
+				norm = std::sqrt(normX*normX + normY * normY);
+				normX /= norm;
+				normY /= norm;
+
+				bPts_inner.push_back(i);
+				bValues_inner.push_back(normX* k1*pi*std::cos(k1*pi*rstar) / r * 4 * (x - 0.5)
+										+ normY * k1*pi*std::cos(k1*pi*rstar) / r * 4 * (y - 0.5));
+
+			}
+		}
+	}
+
 	actual(actual.rows() - 1) = 0;
 	source(source.rows() - 1) = 0;
 	Boundary boundary;
@@ -277,6 +321,9 @@ void write_l1error_cond(Multigrid& mg, MultigridParameters params, string direct
 	string txt = ".txt";
 	vector<double> vec;
 	Grid* grid = mg.grids_.at(mg.grids_.size() - 1).second;
+	if (params.geomtype.compare("concentric_circles") == 0) {
+		vec.push_back(calc_l1_error_circle(grid, grid->neumannFlag_, params.k1));
+	}
 	vec.push_back(calc_l1_error(grid, grid->neumannFlag_, params.k1, params.k2));
 	//vec.push_back(grid->cond_L());
 	vec.push_back(clock);
@@ -313,11 +360,11 @@ MultigridParameters gen_mg_param(string geom, int numGrids, int k, int poly_deg,
 		dir = "square_test_geometries/";
 	}
 	else if (geom.compare("square_with_circle") == 0) {
-		msh_files = {"square_hole_176.msh", "square_hole_640.msh", "square_hole_2532.msh", "square_hole_10197.msh" };
+		msh_files = {/*"square_hole_89.msh",*/ "square_hole_176.msh", "square_hole_640.msh", "square_hole_2532.msh", "square_hole_10197.msh" };
 		dir = "square_hole_geoms/";
 	}
 	else if (geom.compare("concentric_circles") == 0) {
-		msh_files = { "concentric_circles_59.msh",  "concentric_circles_188.msh" , "concentric_circles_650.msh" , "concentric_circles_2581.msh" , "concentric_circles_10207.msh" };
+		msh_files = {/*"concentric_circles_90.msh" , "concentric_circles_188.msh" ,*/ "concentric_circles_650.msh" , "concentric_circles_2581.msh" , "concentric_circles_10207.msh" };
 		dir = "concentric_circle_geoms/";
 	}
 	vector<string> filenames, filetypes;
@@ -365,7 +412,7 @@ void run_tests() {
 		run_mg_sim(params[i]);
 	}
 	*/
-	MultigridParameters param = gen_mg_param("square_with_circle", 4, 1, 6, 150, true);
+	MultigridParameters param = gen_mg_param("concentric_circles", 3, 1, 6, 500,  true);
 	run_mg_sim(param);
 }
 
@@ -373,18 +420,18 @@ void testGmshSingleGrid() {
 	GridProperties props;
 	
 	props.iters = 5;
-	props.polyDeg = 5;
+	props.polyDeg = 6;
 	props.omega = 1.4;
 	props.rbfExp = 3;
 	props.stencilSize = (int)(2.5 * (props.polyDeg + 1) * (props.polyDeg + 2) / 2);
 	
 	//Grid* testGrid = genGmshGridNeumann("square_with_circle", "square_hole_geoms/square_hole_10197.msh", props, "msh", 1, 1, "fine");
 	//Grid* testGrid = genGmshGridNeumann("square", "square_test_geometries/square_10k.msh", props, "msh", 1, 1);
-	Grid* testGrid = genGmshGridDirichlet("concentric_circles", "concentric_circle_geoms/concentric_circles_10207.msh", props, "msh", 2, 2);
+	Grid* testGrid = genGmshGridNeumann("concentric_circles", "concentric_circle_geoms/concentric_circles_10207.msh", props, "msh", 1, 1, "fine");
 	
 	vector<double> res;
 	testGrid->boundaryOp("fine");
-	for (int i = 0; i < 2000; i++) {
+	for (int i = 0; i < 10000; i++) {
 		cout << "residual: " << testGrid->residual().lpNorm<1>() / testGrid->source_.lpNorm<1>() << endl;
 		res.push_back(testGrid->residual().lpNorm<1>() / testGrid->source_.lpNorm<1>());
 		testGrid->sor(testGrid->laplaceMat_, testGrid->values_, &testGrid->source_);
@@ -392,7 +439,7 @@ void testGmshSingleGrid() {
 	testGrid->bound_eval_neumann();
 	writeVectorToTxt(res, "residual.txt");
 	//cout << "L1 error: " << calc_l1_error(testGrid, testGrid->neumannFlag_, 1, 1) << endl;
-	cout << "L1 error: " << calc_l1_error_circle(testGrid, testGrid->neumannFlag_, 2) << endl;
+	cout << "L1 error: " << calc_l1_error_circle(testGrid, testGrid->neumannFlag_, 1) << endl;
 
 	//band matrix plotting.
 	
