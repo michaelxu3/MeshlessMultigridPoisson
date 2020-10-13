@@ -50,3 +50,6 @@ comp_exec_UQ.sh
 /MeshlessPoisson/MeshlessMultigridPoisson/resplot.py
 *.py
 *.xlsx
+/MeshlessPoisson/MeshlessMultigridPoisson/modified_poisson_data.zip
+/MeshlessPoisson/MeshlessMultigridPoisson/10_4_dataset1.zip
+/MeshlessPoisson/MeshlessMultigridPoisson/10_6_dataset2_allfinegrid_interpolation.zip

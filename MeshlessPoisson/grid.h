@@ -15,6 +15,8 @@
 
 typedef std::tuple<double, double, double> Point;
 using std::vector;
+using std::cout;
+using std::endl;
 class Grid {
 public:
 	//Instance Variables
@@ -60,15 +62,15 @@ public:
 
 	void rcm_order_points();
 	vector<Point> pointIDs_to_vector(const vector<int> &pointIDs);
-	vector<int> kNearestNeighbors(Point point, bool neumannFlag, bool pointBCFlag);
-	vector <int> kNearestNeighbors(int pointNumber, bool neumannFlag);
+	vector<int> kNearestNeighbors(Point point, bool neumannFlag, bool pointBCFlag, int k);
+	vector <int> kNearestNeighbors(int pointNumber, bool neumannFlag, int k);
 
-	std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>> buildCoeffMatrix(Point point, bool neumann, bool pointBCFlag);
-	std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>> buildCoeffMatrix(int pointNum, bool neumann);
+	std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>> buildCoeffMatrix(Point point, bool neumann, bool pointBCFlag, int polyDeg);
+	std::tuple<Eigen::MatrixXd, vector<int>, vector<Point>> buildCoeffMatrix(int pointNum, bool neumann, int polyDeg);
 	std::pair<Eigen::VectorXd, vector<int>> laplaceWeights(int pointID);
 	std::pair<Eigen::VectorXd, vector<int>> derivx_weights(int pointID);
 	std::pair<Eigen::VectorXd, vector<int>> derivy_weights(int pointID);
-	std::pair<Eigen::VectorXd, vector<int>> pointInterpWeights(Point point);
+	std::pair<Eigen::VectorXd, vector<int>> pointInterpWeights(Point point, int polyDeg);
 	
 	int getSize();
 	int getStencilSize();

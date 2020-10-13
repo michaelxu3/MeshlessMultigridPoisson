@@ -19,8 +19,10 @@ Eigen::SparseMatrix<double>* Multigrid::buildInterpMatrix(Grid* baseGrid, Grid* 
 	Eigen::SparseMatrix<double>* interpMatrix = new Eigen::SparseMatrix<double>(targetGrid->getSize(), baseGrid->getSize());
 	vector<Eigen::Triplet<double>> tripletList;
 	//tripletList: <row, col, value>
+	int finegridpoly = grids_[grids_.size() - 1].second->properties_.polyDeg;
 	for (int i = 0; i < targetGrid->getSize(); i++) {
-		std::pair<Eigen::VectorXd, vector<int>> pointWeights = baseGrid->pointInterpWeights(targetGrid->points_[i]);
+		//baseGrid->properties_.polyDeg
+		std::pair<Eigen::VectorXd, vector<int>> pointWeights = baseGrid->pointInterpWeights(targetGrid->points_[i], finegridpoly);
 		for (size_t j = 0; j < pointWeights.second.size(); j++) {
 
 			tripletList.push_back(Eigen::Triplet<double>(i, pointWeights.second[j], pointWeights.first(j)));
@@ -33,7 +35,7 @@ Eigen::SparseMatrix<double>* Multigrid::buildInterpMatrix(Grid* baseGrid, Grid* 
 void Multigrid::buildProlongMatrices() {
 	prolongMatrices_.resize(grids_.size());
 	for (size_t i = 0; i < grids_.size() - 1; i++) {
-		prolongMatrices_[i] = (buildInterpMatrix(grids_[i].second, grids_[i+1].second));
+		prolongMatrices_[i] = (buildInterpMatrix(grids_[i].second, grids_[i + 1].second));
 	}
 	prolongMatrices_[prolongMatrices_.size() - 1] = NULL;
 }
@@ -75,11 +77,11 @@ void Multigrid::vCycle() {
 		}
 		currGrid->boundaryOp(gridType);
 		currGrid->sor(currGrid->laplaceMat_, currGrid->values_, &(currGrid->source_));
-		
-		(grids_[i - 1].second->source_)(Eigen::seq(0, grids_[i - 1].second->laplaceMatSize_ - 1)) = (*(restrictionMatrices_[i])) * (currGrid->residual())(Eigen::seq(0, currGrid->laplaceMatSize_-1));
-		grids_[i - 1].second->fix_vector_bound_coarse(&grids_[i-1].second->source_);
+
+		(grids_[i - 1].second->source_)(Eigen::seq(0, grids_[i - 1].second->laplaceMatSize_ - 1)) = (*(restrictionMatrices_[i])) * (currGrid->residual())(Eigen::seq(0, currGrid->laplaceMatSize_ - 1));
+		grids_[i - 1].second->fix_vector_bound_coarse(&grids_[i - 1].second->source_);
 		if (currGrid->neumannFlag_) {
-			grids_[i - 1].second->source_.coeffRef(grids_[i-1].second->source_.rows()-1) = 0;
+			grids_[i - 1].second->source_.coeffRef(grids_[i - 1].second->source_.rows() - 1) = 0;
 			grids_[i - 1].second->modify_coeff_neumann("coarse");
 		}
 
